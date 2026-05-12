@@ -19,7 +19,7 @@ sudo apt install python3-pip python3-venv git -y
 ## 📂 Step 2: Clone & Environment Setup
 Clone your repository (or upload your files via SCP):
 ```bash
-git clone <your-repo-url> gatekeeper
+git clone https://github.com/dfaktzl/telebot.git gatekeeper
 cd gatekeeper
 ```
 
