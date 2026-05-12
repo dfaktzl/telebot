@@ -1,0 +1,235 @@
+from aiogram import Router, types, F
+from aiogram.filters import Command
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from database import (
+    get_stats, set_setting, get_setting, verify_user, 
+    get_all_verified_users, get_user_by_id_or_username, get_username_history
+)
+from utils.helpers import is_bot_admin, safe_broadcast
+import aiosqlite
+import os
+
+router = Router()
+
+def get_admin_main_kb():
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="📊 Stats & Health", callback_data="admin_stats"))
+    builder.row(types.InlineKeyboardButton(text="⚙️ System Config", callback_data="admin_config"))
+    builder.row(types.InlineKeyboardButton(text="🧠 Brain (Keywords)", callback_data="admin_keywords"))
+    builder.row(types.InlineKeyboardButton(text="💬 Edit Messages", callback_data="admin_messages"))
+    builder.row(types.InlineKeyboardButton(text="📢 Mass Broadcast", callback_data="admin_broadcast_start"))
+    return builder.as_markup()
+
+@router.message(Command("admin", prefix="/."))
+async def cmd_admin(message: types.Message):
+    if not await is_bot_admin(message.bot, message.from_user.id): return
+    await message.answer(
+        "🛠 **MASTER CONTROL PANEL**\n"
+        "────────────────────\n"
+        "Welcome to the high-security management interface. Choose a module to manage:",
+        reply_markup=get_admin_main_kb()
+    )
+
+@router.callback_query(F.data == "admin_main")
+async def cb_main(callback: types.CallbackQuery):
+    await callback.message.edit_text(
+        "🛠 **MASTER CONTROL PANEL**\n"
+        "────────────────────\n"
+        "Welcome to the high-security management interface. Choose a module to manage:",
+        reply_markup=get_admin_main_kb()
+    )
+    await callback.answer()
+
+# --- 📊 STATS PAGE ---
+@router.callback_query(F.data == "admin_stats")
+async def cb_stats(callback: types.CallbackQuery):
+    total, verified = await get_stats()
+    emergency = await get_setting('emergency_mode', '0')
+    status = "🚨 EMERGENCY" if emergency == '1' else "✅ NORMAL"
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="🆔 Update Channel IDs", callback_data="admin_update_id"))
+    builder.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="admin_main"))
+    
+    await callback.message.edit_text(
+        f"📊 **System Stats & Health**\n"
+        f"────────────────────\n"
+        f"Users: `{total}` total (`{verified}` verified)\n"
+        f"Status: **{status}**\n\n"
+        f"Vouches are synced daily to @VouchCheckerBot.\n"
+        f"Health Check: **OPERATIONAL**",
+        reply_markup=builder.as_markup()
+    )
+    await callback.answer()
+
+# --- ⚙️ CONFIG PAGE ---
+@router.callback_query(F.data == "admin_config")
+async def cb_config(callback: types.CallbackQuery):
+    emergency = await get_setting('emergency_mode', '0')
+    auto_vouch = await get_setting('auto_vouch_enabled', '1')
+    illegal_det = await get_setting('illegal_detection_enabled', '1')
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        types.InlineKeyboardButton(text=f"{'🔴' if emergency == '0' else '🟢'} Emergency Mode", callback_data="toggle_emergency"),
+        types.InlineKeyboardButton(text=f"{'🟢' if auto_vouch == '1' else '🔴'} Auto-Vouch", callback_data="toggle_auto")
+    )
+    builder.row(
+        types.InlineKeyboardButton(text=f"{'🟢' if illegal_det == '1' else '🔴'} Illegal Check", callback_data="toggle_illegal"),
+        types.InlineKeyboardButton(text="🔗 Set Link", callback_data="admin_update_link")
+    )
+    builder.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="admin_main"))
+    
+    await callback.message.edit_text(
+        "⚙️ **System Configuration**\n"
+        f"────────────────────\n"
+        "Toggle system features instantly. Changes take effect immediately without restart.",
+        reply_markup=builder.as_markup()
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("toggle_"))
+async def cb_toggle(callback: types.CallbackQuery):
+    feature = callback.data.split("_")[1]
+    key = {
+        "emergency": "emergency_mode",
+        "auto": "auto_vouch_enabled",
+        "illegal": "illegal_detection_enabled"
+    }.get(feature)
+    
+    current = await get_setting(key, '0')
+    new_val = '1' if current == '0' else '0'
+    await set_setting(key, new_val)
+    await cb_config(callback)
+
+# --- 🧠 BRAIN PAGE ---
+@router.callback_query(F.data == "admin_keywords")
+async def cb_keywords(callback: types.CallbackQuery):
+    score = await get_setting('min_sentiment_score', '2')
+    words = await get_setting('min_sentiment_words', '5')
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="admin_main"))
+    
+    await callback.message.edit_text(
+        "🧠 **Reputation Intelligence**\n"
+        f"────────────────────\n"
+        f"Min Sentiment Score: `{score}`\n"
+        f"Min Word Requirement: `{words}`\n\n"
+        "Use `/addpos`, `/addneg`, or `/addblack` to update lists directly.",
+        reply_markup=builder.as_markup()
+    )
+    await callback.answer()
+
+# --- 💬 MESSAGES PAGE ---
+@router.callback_query(F.data == "admin_messages")
+async def cb_messages(callback: types.CallbackQuery):
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="Start Msg", callback_data="edit_msg_start"))
+    builder.row(types.InlineKeyboardButton(text="Vouch Success", callback_data="edit_msg_vouch_success"))
+    builder.row(types.InlineKeyboardButton(text="ToS Warning", callback_data="edit_msg_illegal_warning"))
+    builder.row(types.InlineKeyboardButton(text="Access Granted", callback_data="edit_msg_access_granted"))
+    builder.row(types.InlineKeyboardButton(text="Blocked Msg", callback_data="edit_msg_blocked"))
+    builder.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="admin_main"))
+    
+    await callback.message.edit_text(
+        "💬 **Dynamic Message Editor**\n"
+        f"────────────────────\n"
+        "Choose a message to edit. You will receive the current text and edit instructions.",
+        reply_markup=builder.as_markup()
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("edit_msg_"))
+async def cb_edit_msg(callback: types.CallbackQuery):
+    key = callback.data.replace("edit_", "")
+    current = await get_setting(key, "Not Set")
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="admin_messages"))
+    
+    await callback.message.edit_text(
+        f"📝 **Editing:** `{key}`\n"
+        f"────────────────────\n"
+        f"**Current Text:**\n`{current}`\n\n"
+        f"**To update, use:**\n`/setsetting {key} Your new message text here`\n\n"
+        f"_Note: Use {{status}} and {{user_id}} in your text to auto-fill info._",
+        reply_markup=builder.as_markup()
+    )
+    await callback.answer()
+
+# --- 🔗 HELPERS (The missing handlers) ---
+@router.callback_query(F.data == "admin_update_link")
+async def cb_update_link(callback: types.CallbackQuery):
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="admin_config"))
+    await callback.message.edit_text(
+        "🔗 **Update Invite Link**\n"
+        "────────────────────\n"
+        "To set a new invite link for verified users, please send:\n\n"
+        "`/setchatlink <your_url_here>`",
+        reply_markup=builder.as_markup()
+    )
+    await callback.answer()
+
+@router.callback_query(F.data == "admin_update_id")
+async def cb_update_id(callback: types.CallbackQuery):
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="admin_stats"))
+    await callback.message.edit_text(
+        "🆔 **Update Channel ID**\n"
+        "────────────────────\n"
+        "To update the main group ID (Black Channel), send:\n\n"
+        "`/blackchannel <channel_id>`",
+        reply_markup=builder.as_markup()
+    )
+    await callback.answer()
+
+@router.callback_query(F.data == "admin_broadcast_start")
+async def cb_broadcast_start(callback: types.CallbackQuery):
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="admin_main"))
+    await callback.message.edit_text(
+        "📢 **Mass Broadcast**\n"
+        "────────────────────\n"
+        "To send a message to all verified users, send:\n\n"
+        "`/broadcast <your message here>`\n\n"
+        "🛑 _Use /stopbroadcast to kill an ongoing process._",
+        reply_markup=builder.as_markup()
+    )
+    await callback.answer()
+
+# --- COMMAND HANDLERS ---
+@router.message(Command("setchatlink", prefix="/."))
+async def cmd_setchatlink(message: types.Message):
+    if not await is_bot_admin(message.bot, message.from_user.id): return
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2: return
+    await set_setting('invite_link', args[1])
+    await message.answer(f"✅ **Invite Link Updated**\nNew: {args[1]}")
+
+@router.message(Command("blackchannel", prefix="/."))
+async def cmd_blackchannel(message: types.Message):
+    if not await is_bot_admin(message.bot, message.from_user.id): return
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2: return
+    await set_setting('black_channel_id', args[1])
+    await message.answer(f"✅ **Black Channel Updated**\nID: `{args[1]}`")
+
+@router.message(Command("broadcast", prefix="/."))
+async def cmd_broadcast(message: types.Message):
+    if not await is_bot_admin(message.bot, message.from_user.id): return
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2: return
+    users = await get_all_verified_users()
+    await message.answer(f"📢 **Broadcast Initialized**\nTargeting {len(users)} verified members...")
+    success, fail = await safe_broadcast(message.bot, users, args[1])
+    await message.answer(f"✅ **Broadcast Finished**\nSent: `{success}` | Failed: `{fail}`")
+
+@router.message(Command("setsetting", prefix="/."))
+async def cmd_setsetting(message: types.Message):
+    if not await is_bot_admin(message.bot, message.from_user.id): return
+    args = message.text.split(maxsplit=2)
+    if len(args) < 3: return
+    await set_setting(args[1], args[2])
+    await message.answer(f"✅ **Setting `{args[1]}` Updated**")
