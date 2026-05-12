@@ -1,4 +1,5 @@
-# 🚀 Oracle Cloud Deployment Guide: Perth Gatekeeper Bot
+# 🚀 Oracle Cloud Deployment Guiv/bin/activate
+pip install -r de: Perth Gatekeeper Bot
 
 This guide provides step-by-step instructions for deploying the **Gatekeeper Bot** to an Ubuntu-based Oracle Cloud instance for 24/7 high-security operation.
 
@@ -26,8 +27,7 @@ cd gatekeeper
 Create a virtual environment:
 ```bash
 python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+source venrequirements.txt
 ```
 
 Create the `.env` file:
