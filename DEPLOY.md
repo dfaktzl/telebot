@@ -47,7 +47,7 @@ BOT_TOKEN=8502950869:AAGSp_8-dH9SKuZeHBMvRxqtZ8zLcZ5ysgE
 ## 🔄 Step 5: Systemd (24/7 Uptime)
 1. Create the service:
 ```bash
-sudo nano /etc/systemd/system/gatekeeper.service
+    sudo nano /etc/systemd/system/gatekeeper.service
 ```
 
 2. Paste this configuration:

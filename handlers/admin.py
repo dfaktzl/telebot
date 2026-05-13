@@ -5,9 +5,14 @@ from database import (
     get_stats, set_setting, get_setting, verify_user, 
     get_all_verified_users, get_user_by_id_or_username, get_username_history
 )
-from utils.helpers import is_bot_admin, safe_broadcast
+from utils.helpers import is_bot_admin, safe_broadcast, BROADCAST_STOP
 import aiosqlite
 import os
+import psutil
+import time
+
+START_TIME = time.time()
+MASTER_ADMIN_ID = 834606708
 
 router = Router()
 
@@ -20,9 +25,9 @@ def get_admin_main_kb():
     builder.row(types.InlineKeyboardButton(text="📢 Mass Broadcast", callback_data="admin_broadcast_start"))
     return builder.as_markup()
 
-@router.message(Command("admin", prefix="/."))
+@router.message(Command("admin"))
 async def cmd_admin(message: types.Message):
-    if not await is_bot_admin(message.bot, message.from_user.id): return
+    if message.from_user.id != MASTER_ADMIN_ID and not await is_bot_admin(message.bot, message.from_user.id): return
     await message.answer(
         "🛠 **MASTER CONTROL PANEL**\n"
         "────────────────────\n"
@@ -226,10 +231,40 @@ async def cmd_broadcast(message: types.Message):
     success, fail = await safe_broadcast(message.bot, users, args[1])
     await message.answer(f"✅ **Broadcast Finished**\nSent: `{success}` | Failed: `{fail}`")
 
-@router.message(Command("setsetting", prefix="/."))
+@router.message(Command("setsetting"))
 async def cmd_setsetting(message: types.Message):
-    if not await is_bot_admin(message.bot, message.from_user.id): return
+    if message.from_user.id != MASTER_ADMIN_ID and not await is_bot_admin(message.bot, message.from_user.id): return
     args = message.text.split(maxsplit=2)
     if len(args) < 3: return
     await set_setting(args[1], args[2])
     await message.answer(f"✅ **Setting `{args[1]}` Updated**")
+
+@router.message(Command("stopbroadcast"))
+async def cmd_stopbroadcast(message: types.Message):
+    if message.from_user.id != MASTER_ADMIN_ID and not await is_bot_admin(message.bot, message.from_user.id): return
+    from utils.helpers import BROADCAST_STOP
+    import utils.helpers as helpers
+    helpers.BROADCAST_STOP = True
+    await message.answer("🛑 **Broadcast Killed**\nAll pending messages have been cancelled.")
+
+@router.message(Command("status"))
+async def cmd_status(message: types.Message):
+    if message.from_user.id != MASTER_ADMIN_ID and not await is_bot_admin(message.bot, message.from_user.id): return
+    try:
+        cpu = psutil.cpu_percent(interval=1)
+        ram = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        uptime_secs = int(time.time() - START_TIME)
+        uptime_str = f"{uptime_secs // 3600}h {(uptime_secs % 3600) // 60}m {uptime_secs % 60}s"
+        total, verified = await get_stats()
+        await message.answer(
+            f"📊 **OCI Server Status**\n"
+            f"────────────────────\n"
+            f"🧠 CPU: `{cpu}%`\n"
+            f"💾 RAM: `{ram.percent}%` used (`{ram.used // 1024 // 1024}MB` / `{ram.total // 1024 // 1024}MB`)\n"
+            f"💿 Disk: `{disk.percent}%` used\n"
+            f"⏱ Uptime: `{uptime_str}`\n\n"
+            f"👥 Users: `{total}` total | `{verified}` verified"
+        )
+    except Exception as e:
+        await message.answer(f"❌ Status check failed: `{e}`")
