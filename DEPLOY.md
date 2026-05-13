@@ -6,7 +6,7 @@ This guide is pre-configured for your instance at **159.13.61.203**.
 Open **PowerShell** on your Windows PC and run this command:
 ```powershell
 # Replace 'YOUR_KEY_NAME' with the actual name of the key file on your desktop
-ssh -i "C:\Users\defak\Desktop\ssh-key-2026-05-13.key" ubuntu@159.13.61.203
+ssh -i "C:\Users\defak\OneDrive\Desktop\ssh-key-2026-05-13.key" ubuntu@159.13.61.203
 ```
 
 ---
