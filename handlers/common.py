@@ -117,3 +117,29 @@ async def cmd_link(message: types.Message):
     invite_link = await get_setting('invite_link', 'Contact Admin for link.')
     msg_granted = await get_setting('msg_access_granted', 'Access Granted!')
     await message.answer(f"{msg_granted}\n\n🔗 **Your Entry Link:**\n{invite_link}")
+
+@router.message(F.new_chat_members)
+async def welcome_new_member(message: types.Message):
+    import asyncio
+    white_id = await get_setting('white_channel_id', '0')
+    if str(message.chat.id) != white_id:
+        return
+
+    timer = int(await get_setting('welcome_delete_timer', '30'))
+    msg_tpl = await get_setting('msg_welcome', 'Welcome, {user_mention}!')
+
+    for member in message.new_chat_members:
+        if member.is_bot:
+            continue
+        mention = member.mention_html()
+        text = msg_tpl.format(user_mention=mention, timer=timer)
+        sent = await message.answer(text, parse_mode="HTML")
+
+        # Auto-delete in background
+        async def _delete_later(msg=sent, delay=timer):
+            await asyncio.sleep(delay)
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+        asyncio.create_task(_delete_later())

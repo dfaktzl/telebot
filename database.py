@@ -64,7 +64,9 @@ async def init_db():
             ('msg_vouch_revoked', '🚫 **Negative Vouch**\n────────────────────\nUser: `{identifier}`\nStatus: **FLAGGED / UNVERIFIED**\nReason: _{comment}_'),
             ('msg_vouch_usage', 'ℹ️ **Vouch Usage**\n\nReply to a message with `/vouch` or use:\n`/vouch <ID or @username> [reason]`'),
             ('msg_vouch_error', '❌ **Process Failed**\n\nCould not verify the user. Ensure the ID is correct or the user has interacted with the bot.'),
-            ('msg_illegal_warning', '⚠️ **CONTENT WARNING**\n────────────────────\n{user_mention}, please be careful of the words you use in here.\n\n_We are maintaining strict compliance to ensure the longevity of this community._')
+            ('msg_illegal_warning', '⚠️ **CONTENT WARNING**\n────────────────────\n{user_mention}, please be careful of the words you use in here.\n\n_We are maintaining strict compliance to ensure the longevity of this community._'),
+            ('msg_welcome', '👋 **Welcome, {user_mention}!**\n────────────────────\nYou have entered a high-trust community. Please read the rules and conduct yourself accordingly.\n\n_This message will self-destruct in {timer} seconds._'),
+            ('welcome_delete_timer', '30')
         ]
         for key, value in defaults:
             await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))

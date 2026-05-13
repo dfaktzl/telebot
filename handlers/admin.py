@@ -131,6 +131,7 @@ async def cb_keywords(callback: types.CallbackQuery):
 async def cb_messages(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.row(types.InlineKeyboardButton(text="Start Msg", callback_data="edit_msg_start"))
+    builder.row(types.InlineKeyboardButton(text="Welcome Msg", callback_data="edit_msg_welcome"))
     builder.row(types.InlineKeyboardButton(text="Vouch Success", callback_data="edit_msg_vouch_success"))
     builder.row(types.InlineKeyboardButton(text="ToS Warning", callback_data="edit_msg_illegal_warning"))
     builder.row(types.InlineKeyboardButton(text="Access Granted", callback_data="edit_msg_access_granted"))
