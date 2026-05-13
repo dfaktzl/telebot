@@ -1,11 +1,18 @@
-# 🚀 Ubuntu 22.04 Deployment Guide: Perth Gatekeeper Bot
+# 🚀 Production Deployment Guide: Perth Gatekeeper Bot
 
-This guide is specifically for an **Ubuntu 22.04** instance on Oracle Cloud.
+This guide is pre-configured for your instance at **159.13.61.203**.
 
-## 🛠️ Step 1: Server Preparation
-Log in to your server: `ssh -i your_key.key ubuntu@YOUR_IP`
+## 🛠️ Step 1: Connect from your Computer
+Open **PowerShell** on your Windows PC and run this command:
+```powershell
+# Replace 'YOUR_KEY_NAME' with the actual name of the key file on your desktop
+ssh -i "C:\Users\defak\Desktop\ssh-key-2026-05-13.key" ubuntu@159.13.61.203
+```
 
-Run these commands to prepare the server:
+---
+
+## 📂 Step 2: Server Preparation
+Once you are logged into the server (it should say `ubuntu@telebot`), run these:
 ```bash
 sudo apt update && sudo apt upgrade -y
 sudo apt install python3-pip python3-venv git -y
@@ -13,27 +20,25 @@ sudo apt install python3-pip python3-venv git -y
 
 ---
 
-## 📂 Step 2: Project Setup
+## 🏗️ Step 3: Project Setup
 ```bash
-# Clone the repository
+# Clone and enter the folder
 git clone https://github.com/dfaktzl/telebot.git gatekeeper
 cd gatekeeper
 
-# Create and activate virtual environment
+# Create environment
 python3 -m venv venv
 source venv/bin/activate
-
-# Install requirements
 pip install -r requirements.txt
 ```
 
 ---
 
-## 🔑 Step 3: Configuration
+## 🔑 Step 4: Configuration
 ```bash
 nano .env
 ```
-Paste this inside:
+Paste this exactly:
 ```env
 BOT_TOKEN=8502950869:AAGSp_8-dH9SKuZeHBMvRxqtZ8zLcZ5ysgE
 ```
@@ -41,8 +46,8 @@ BOT_TOKEN=8502950869:AAGSp_8-dH9SKuZeHBMvRxqtZ8zLcZ5ysgE
 
 ---
 
-## 🔄 Step 4: Systemd (24/7 Uptime)
-1. Create the service file:
+## 🔄 Step 5: Systemd (24/7 Uptime)
+1. Create the service:
 ```bash
 sudo nano /etc/systemd/system/gatekeeper.service
 ```
@@ -63,17 +68,9 @@ Restart=always
 WantedBy=multi-user.target
 ```
 
-3. Start the bot:
+3. Start everything:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable gatekeeper
 sudo systemctl start gatekeeper
-```
-
----
-
-## 📊 Step 5: Check Status
-```bash
-sudo systemctl status gatekeeper
-journalctl -u gatekeeper -f
 ```
