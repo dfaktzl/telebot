@@ -27,9 +27,7 @@ git clone https://github.com/dfaktzl/telebot.git gatekeeper
 cd gatekeeper
 
 # Create environment
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+
 ```
 
 ---
@@ -74,3 +72,4 @@ sudo systemctl daemon-reload
 sudo systemctl enable gatekeeper
 sudo systemctl start gatekeeper
 ```
+                                                                                                                                                                                                                                                                        

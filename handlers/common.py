@@ -1,4 +1,4 @@
-from aiogram import Router, types, F
+from aiogram import Router, types, F, Bot
 from aiogram.filters import Command
 from database import (
     get_user_by_id_or_username, verify_user, add_or_update_user, 
@@ -9,7 +9,7 @@ import re
 
 router = Router()
 
-async def is_fully_verified(bot: types.Bot, user_id: int):
+async def is_fully_verified(bot: Bot, user_id: int):
     # 1. Check Master Admin
     if user_id == 834606708: return True
     
