@@ -1,17 +1,11 @@
-# Oracle Cloud Deployment Guide
+# 🚀 Ubuntu 22.04 Deployment Guide: Perth Gatekeeper Bot
 
-This guide provides clean instructions for your Oracle Cloud server.
+This guide is specifically for an **Ubuntu 22.04** instance on Oracle Cloud.
 
-## Step 1: Server Preparation
-Run these commands based on your OS.
+## 🛠️ Step 1: Server Preparation
+Log in to your server: `ssh -i your_key.key ubuntu@YOUR_IP`
 
-### For Oracle Linux (Default)
-```bash
-sudo dnf update -y
-sudo dnf install python3 python3-pip git -y
-```
-
-### For Ubuntu
+Run these commands to prepare the server:
 ```bash
 sudo apt update && sudo apt upgrade -y
 sudo apt install python3-pip python3-venv git -y
@@ -19,45 +13,50 @@ sudo apt install python3-pip python3-venv git -y
 
 ---
 
-## Step 2: Project Setup
+## 📂 Step 2: Project Setup
 ```bash
+# Clone the repository
 git clone https://github.com/dfaktzl/telebot.git gatekeeper
 cd gatekeeper
+
+# Create and activate virtual environment
 python3 -m venv venv
 source venv/bin/activate
+
+# Install requirements
 pip install -r requirements.txt
 ```
 
 ---
 
-## Step 3: Configuration
+## 🔑 Step 3: Configuration
 ```bash
 nano .env
 ```
 Paste this inside:
 ```env
-BOT_TOKEN=your_token_here
+BOT_TOKEN=8502950869:AAGSp_8-dH9SKuZeHBMvRxqtZ8zLcZ5ysgE
 ```
-(Press CTRL+O, Enter, and CTRL+X to save)
+*(Press **CTRL+O**, **Enter**, then **CTRL+X** to save)*
 
 ---
 
-## Step 4: Systemd (24/7 Uptime)
-1. Create the service:
+## 🔄 Step 4: Systemd (24/7 Uptime)
+1. Create the service file:
 ```bash
 sudo nano /etc/systemd/system/gatekeeper.service
 ```
 
-2. Paste this (use 'opc' for Oracle Linux, 'ubuntu' for Ubuntu):
+2. Paste this configuration:
 ```ini
 [Unit]
-Description=Gatekeeper Bot
+Description=Perth Gatekeeper Bot
 After=network.target
 
 [Service]
-User=opc
-WorkingDirectory=/home/opc/gatekeeper
-ExecStart=/home/opc/gatekeeper/venv/bin/python main.py
+User=ubuntu
+WorkingDirectory=/home/ubuntu/gatekeeper
+ExecStart=/home/ubuntu/gatekeeper/venv/bin/python main.py
 Restart=always
 
 [Install]
@@ -69,4 +68,12 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 sudo systemctl enable gatekeeper
 sudo systemctl start gatekeeper
+```
+
+---
+
+## 📊 Step 5: Check Status
+```bash
+sudo systemctl status gatekeeper
+journalctl -u gatekeeper -f
 ```
