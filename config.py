@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Bot Token
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8502950869:AAGSp_8-dH9SKuZeHBMvRxqtZ8zLcZ5ysgE")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8502950869:AAGbNWY86HLNvA54o16rS1PSkqv2hTppmIU")
 
 # Channel IDs
 BLACK_CHANNEL_ID = -1003885954803
@@ -14,7 +14,7 @@ DEFAULT_WHITE_CHANNEL_ID = 0  # To be set via /admin
 DEFAULT_INVITE_LINK = "https://t.me/placeholder"
 
 # Admin Contact
-ADMIN_CONTACT = "@VouchCheckerBot"
+ADMIN_CONTACT = "@GatekeeperBot"
 ADMIN_USERNAME = "Admin Team"
 
 # Database

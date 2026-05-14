@@ -1,75 +1,62 @@
-# 🚀 Production Deployment Guide: Perth Gatekeeper Bot
+# 🚀 Quick Deploy Reference — Perth Gatekeeper Bot
 
-This guide is pre-configured for your instance at **159.13.61.203**.
+> **Full instructions** are in [README.md](./README.md).
+> This file is a command cheat-sheet for experienced users.
 
-## 🛠️ Step 1: Connect from your Computer
-Open **PowerShell** on your Windows PC and run this command:
+**Bot token prefix:** `8502950869` (Gatekeeper)
+**Repo:** `https://github.com/dfaktzl/telebot.git`
+**Deploy path:** `/home/ubuntu/gatekeeper`
+**Service name:** `gatekeeper`
+
+---
+
+## SSH In (from Windows PowerShell)
+
 ```powershell
-# Replace 'YOUR_KEY_NAME' with the actual name of the key file on your desktop
-ssh -i "C:\Users\defak\OneDrive\Desktop\ssh-key-2026-05-13.key" ubuntu@159.13.61.203
+# Fix key permissions first (only needed once)
+icacls "C:\Users\defak\Downloads\botcurrentpriv.key" /inheritance:r /grant:r "$($env:USERNAME):(R)"
+
+# Connect
+ssh -i "C:\Users\defak\Downloads\botcurrentpriv.key" ubuntu@<YOUR_OCI_PUBLIC_IP>
 ```
 
 ---
 
-## 📂 Step 2: Server Preparation
-Once you are logged into the server (it should say `ubuntu@telebot`), run these:
+## First-Time Deploy (run on server as ubuntu)
+
 ```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install python3-pip python3-venv git -y
-```
-
----
-
-## 🏗️ Step 3: Project Setup
-```bash
-# Clone and enter the folder
-git clone https://github.com/dfaktzl/telebot.git gatekeeper
-cd gatekeeper
-
-# Create environment
-
-```
-
----
-
-## 🔑 Step 4: Configuration
-```bash
-nano .env
-```
-Paste this exactly:
-```env
-BOT_TOKEN=8502950869:AAGSp_8-dH9SKuZeHBMvRxqtZ8zLcZ5ysgE
-```
-*(Press **CTRL+O**, **Enter**, then **CTRL+X** to save)*
-
----
-
-## 🔄 Step 5: Systemd (24/7 Uptime)
-1. Create the service:
-```bash
-    sudo nano /etc/systemd/system/gatekeeper.service
-```
-
-2. Paste this configuration:
-```ini
-[Unit]
-Description=Perth Gatekeeper Bot
-After=network.target
-
-[Service]
-User=ubuntu
-WorkingDirectory=/home/ubuntu/gatekeeper
-ExecStart=/home/ubuntu/gatekeeper/venv/bin/python main.py
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-3. Start everything:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable gatekeeper
+curl -sO https://raw.githubusercontent.com/dfaktzl/telebot/master/deploy.sh
+sudo bash deploy.sh
 sudo systemctl start gatekeeper
+sudo journalctl -u gatekeeper -f
 ```
-                                                                                                                                                                                                                                                                        
+
+---
+
+## Update (2 commands)
+
+```bash
+cd /home/ubuntu/gatekeeper && git pull
+sudo systemctl restart gatekeeper
+```
+
+---
+
+## Service Commands
+
+```bash
+sudo systemctl status gatekeeper    # Check status
+sudo systemctl stop gatekeeper      # Stop
+sudo systemctl restart gatekeeper   # Restart
+sudo journalctl -u gatekeeper -f    # Live logs
+sudo journalctl -u gatekeeper -n 50 # Last 50 log lines
+```
+
+---
+
+## Both Bots Running?
+
+```bash
+sudo systemctl status gatekeeper   # token 8502950869
+sudo systemctl status repbot       # token 8581140481
+```
