@@ -5,8 +5,12 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import BOT_TOKEN, BLACK_CHANNEL_ID, HEALTH_CHECK_INTERVAL, SYNC_INTERVAL
-from database import init_db, get_setting, set_setting, get_all_verified_users, verify_user, add_or_update_user
+from database import (
+    init_db, get_setting, set_setting, get_all_verified_users,
+    verify_user, add_or_update_user, get_all_known_user_ids
+)
 from handlers import common, admin, logger as log_handler, reputation
+from handlers import enforcement
 from utils.helpers import is_black_channel_member, safe_broadcast
 
 # Logging
@@ -56,6 +60,43 @@ async def sync_members():
             await verify_user(uid, 0)
     logger.info("Sync complete.")
 
+async def enforcement_sweep():
+    """Scheduled sweep: check all known users in social chat against main group."""
+    enforcement_on = await get_setting('enforcement_enabled', '1')
+    if enforcement_on != '1':
+        return
+
+    white_id = await get_setting('white_channel_id', '0')
+    if white_id == '0':
+        return
+
+    white_id_int = int(white_id)
+    logger.info("Starting enforcement sweep...")
+
+    user_ids = await get_all_known_user_ids()
+    actions_taken = 0
+
+    for uid in user_ids:
+        # Check if user is currently in the social chat
+        try:
+            member = await bot.get_chat_member(white_id_int, uid)
+            if member.status in ["left", "kicked"]:
+                continue  # Not in social chat, skip
+        except Exception:
+            continue  # Can't check, skip
+
+        # They ARE in social chat — enforce main group membership
+        from handlers.enforcement import enforce_user
+        acted = await enforce_user(bot, uid, white_id_int)
+        if acted:
+            actions_taken += 1
+
+        # Small delay to respect Telegram rate limits
+        import asyncio
+        await asyncio.sleep(0.5)
+
+    logger.info(f"Enforcement sweep complete. Actions taken: {actions_taken}")
+
 # Join Request Handler
 @dp.chat_join_request()
 async def handle_join_request(event: types.ChatJoinRequest):
@@ -80,6 +121,7 @@ async def main():
     
     # Register Handlers (Commands take priority)
     dp.include_router(admin.router)
+    dp.include_router(enforcement.router)  # Enforcement before common so join checks fire first
     dp.include_router(common.router)
     dp.include_router(reputation.router)
     dp.include_router(log_handler.router)
@@ -91,6 +133,7 @@ async def main():
     
     scheduler.add_job(health_check, 'interval', seconds=h_int)
     scheduler.add_job(sync_members, 'interval', seconds=s_int)
+    scheduler.add_job(enforcement_sweep, 'interval', seconds=21600, misfire_grace_time=3600)  # Every 6 hours (4x daily)
     scheduler.start()
     
     # Start Polling

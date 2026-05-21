@@ -23,4 +23,4 @@ DB_PATH = "gatekeeper.db"
 # Safety & Security
 BROADCAST_DELAY = 0.15  # Seconds between messages
 HEALTH_CHECK_INTERVAL = 300  # 5 minutes
-SYNC_INTERVAL = 86400  # 24 hours
+SYNC_INTERVAL = 21600  # 6 hours (4x daily)

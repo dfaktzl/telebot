@@ -14,7 +14,8 @@ async def init_db():
                 vouched_by INTEGER DEFAULT NULL,
                 vouch_count INTEGER DEFAULT 0,
                 join_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                status TEXT DEFAULT 'active'
+                status TEXT DEFAULT 'active',
+                kick_count INTEGER DEFAULT 0
             )
         """)
         await db.execute("""
@@ -66,7 +67,8 @@ async def init_db():
             ('msg_vouch_error', '❌ **Process Failed**\n\nCould not verify the user. Ensure the ID is correct or the user has interacted with the bot.'),
             ('msg_illegal_warning', '⚠️ **CONTENT WARNING**\n────────────────────\n{user_mention}, please be careful of the words you use in here.\n\n_We are maintaining strict compliance to ensure the longevity of this community._'),
             ('msg_welcome', '👋 **Welcome, {user_mention}!**\n────────────────────\nYou have entered a high-trust community. Please read the rules and conduct yourself accordingly.\n\n_This message will self-destruct in {timer} seconds._'),
-            ('welcome_delete_timer', '30')
+            ('welcome_delete_timer', '600'),
+            ('enforcement_enabled', '1')
         ]
         for key, value in defaults:
             await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))
@@ -78,7 +80,8 @@ async def init_db():
         migration_needed = [
             ('vouched_by', 'INTEGER DEFAULT NULL'),
             ('vouch_count', 'INTEGER DEFAULT 0'),
-            ('status', "TEXT DEFAULT 'active'")
+            ('status', "TEXT DEFAULT 'active'"),
+            ('kick_count', 'INTEGER DEFAULT 0'),
         ]
         
         for col_name, col_type in migration_needed:
@@ -177,3 +180,25 @@ async def get_stats():
         async with db.execute("SELECT COUNT(*) FROM users WHERE is_verified = 1") as cursor:
             verified_users = (await cursor.fetchone())[0]
         return total_members, verified_users
+
+async def get_kick_count(user_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT kick_count FROM users WHERE user_id = ?", (user_id,)) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
+
+async def increment_kick_count(user_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        # Ensure user exists first
+        async with db.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,)) as cursor:
+            if not await cursor.fetchone():
+                await db.execute("INSERT INTO users (user_id, username, kick_count) VALUES (?, ?, 1)", (user_id, f"User_{user_id}"))
+            else:
+                await db.execute("UPDATE users SET kick_count = kick_count + 1 WHERE user_id = ?", (user_id,))
+        await db.commit()
+
+async def get_all_known_user_ids():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT user_id FROM users") as cursor:
+            rows = await cursor.fetchall()
+            return [row[0] for row in rows]
