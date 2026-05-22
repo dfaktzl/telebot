@@ -304,3 +304,147 @@ async def cmd_status(message: types.Message):
         )
     except Exception as e:
         await message.answer(f"❌ Status check failed: `{e}`")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  /noweb / /weboff / /webactive
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.message(Command("noweb", "weboff", prefix="/."))
+async def cmd_noweb(message: types.Message):
+    if message.from_user.id != MASTER_ADMIN_ID and not await is_bot_admin(message.bot, message.from_user.id): return
+    
+    import subprocess
+    import logging
+    from config import LOG_CHANNEL
+    logger = logging.getLogger(__name__)
+    
+    cmd_name = "/weboff" if message.text and "/weboff" in message.text else "/noweb"
+    logger.info(f"ADMIN COMMAND: {cmd_name} triggered by admin {message.from_user.id}")
+    
+    try:
+        # Run PM2 command to stop the dashboard
+        res = subprocess.run(
+            "pm2 stop repbot-dashboard",
+            shell=True,
+            capture_output=True,
+            text=True
+        )
+        
+        if res.returncode == 0:
+            msg = (
+                "🛑 **WEB FEATURES DISABLED**\n\n"
+                "The Live Administrative & Operations Dashboard has been completely shut down "
+                "via PM2. The web server is now offline and no longer accessible.\n\n"
+                "To turn it back on, an admin can start it using `/webactive` or via SSH: `pm2 start repbot-dashboard`"
+            )
+            await message.answer(msg, parse_mode="Markdown")
+            
+            if LOG_CHANNEL:
+                try:
+                    await message.bot.send_message(
+                        chat_id=LOG_CHANNEL,
+                        text=f"👮 **ADMIN MODERATION**: Web Dashboard stopped by {message.from_user.first_name} via Telegram `{cmd_name}`.",
+                        parse_mode="Markdown"
+                    )
+                except Exception:
+                    pass
+        else:
+            error_msg = res.stderr or res.stdout
+            logger.error(f"Failed to stop dashboard via PM2: {error_msg}")
+            await message.answer(
+                f"❌ Failed to disable web features via PM2.\n`Error: {error_msg}`",
+                parse_mode="Markdown"
+            )
+    except Exception as e:
+        logger.error(f"Error executing shutdown command: {e}")
+        await message.answer(f"❌ Exception occurred: `{str(e)}`", parse_mode="Markdown")
+
+
+@router.message(Command("webactive", prefix="/."))
+async def cmd_webactive(message: types.Message):
+    if message.from_user.id != MASTER_ADMIN_ID and not await is_bot_admin(message.bot, message.from_user.id): return
+    
+    import subprocess
+    import asyncio
+    import logging
+    from config import LOG_CHANNEL
+    logger = logging.getLogger(__name__)
+    logger.info(f"ADMIN COMMAND: /webactive triggered by admin {message.from_user.id}")
+    
+    # Reply immediately that activation is starting
+    status_message = await message.answer(
+        "⏳ **Activating Web Dashboard...**\n"
+        "Initializing server process via PM2. Please wait while the dashboard boots up...",
+        parse_mode="Markdown"
+    )
+    
+    try:
+        # Run PM2 command to start the dashboard
+        res = subprocess.run(
+            "pm2 start repbot-dashboard",
+            shell=True,
+            capture_output=True,
+            text=True
+        )
+        
+        if res.returncode == 0:
+            # Wait a decent amount of time (5 seconds) for the server to bind port and start
+            await asyncio.sleep(5)
+            
+            # Check if PM2 shows it's online
+            status_res = subprocess.run(
+                "pm2 show repbot-dashboard",
+                shell=True,
+                capture_output=True,
+                text=True
+            )
+            
+            if "status" in status_res.stdout.lower() and "online" in status_res.stdout.lower():
+                msg = (
+                    "🚀 **WEB FEATURES ENABLED**\n\n"
+                    "The Live Administrative & Operations Dashboard is now online and active.\n"
+                    "You can access the dashboard securely using your OCI SSH key pair + password 2FA."
+                )
+                await status_message.edit_text(msg, parse_mode="Markdown")
+                
+                if LOG_CHANNEL:
+                    try:
+                        await message.bot.send_message(
+                            chat_id=LOG_CHANNEL,
+                            text=f"👮 **ADMIN MODERATION**: Web Dashboard started by {message.from_user.first_name} via Telegram `/webactive`.",
+                            parse_mode="Markdown"
+                        )
+                    except Exception:
+                        pass
+                return
+            else:
+                error_msg = "PM2 process started but did not reach online status."
+                logger.error(f"Dashboard start check failed: {error_msg}\nStdout: {status_res.stdout}")
+                raise Exception(error_msg)
+        else:
+            error_msg = res.stderr or res.stdout
+            logger.error(f"Failed to start dashboard via PM2: {error_msg}")
+            raise Exception(error_msg)
+            
+    except Exception as e:
+        logger.error(f"Error starting dashboard, defaulting to shutdown: {e}")
+        await status_message.edit_text(
+            f"⚠️ **Error starting web features**: `{str(e)}`\n"
+            "🚨 Defaulting to **weboff / shutdown** mode to ensure safety...",
+            parse_mode="Markdown"
+        )
+        # Call stop command to ensure it's completely down and safe
+        try:
+            subprocess.run("pm2 stop repbot-dashboard", shell=True, capture_output=True)
+            if LOG_CHANNEL:
+                try:
+                    await message.bot.send_message(
+                        chat_id=LOG_CHANNEL,
+                        text=f"⚠️ **ADMIN WARNING**: /webactive failed and defaulted to shutdown (weboff). Error: {str(e)}",
+                        parse_mode="Markdown"
+                    )
+                except Exception:
+                    pass
+        except Exception as shutdown_err:
+            logger.error(f"Failed to perform safety shutdown: {shutdown_err}")

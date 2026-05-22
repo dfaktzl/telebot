@@ -14,6 +14,7 @@ async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = Non
     """Core enforcement logic: check if user belongs to main group.
     If not, kick (1st offense) or ban (2nd+ offense) from the social chat.
     Returns True if action was taken, False if user is legitimate."""
+    from config import LOG_CHANNEL
 
     # Check if user is in the main group (black channel)
     in_main_group = await is_black_channel_member(bot, user_id)
@@ -56,6 +57,24 @@ async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = Non
         except Exception as e:
             logger.error(f"Failed to send kick notification for {user_id}: {e}")
 
+        # Send Log Channel update
+        if LOG_CHANNEL:
+            try:
+                log_text = (
+                    f"🚪 <b>GATEKEEPER EVICTION (Kick)</b>\n"
+                    f"──────────────────────────\n"
+                    f"👤 <b>User:</b> {display_name} (<code>{user_id}</code>)\n"
+                    f"📋 <b>Action:</b> Kicked from Social Chat (1st offense)\n"
+                    f"ℹ️ <b>Reason:</b> Not a verified member of the main group."
+                )
+                await bot.send_message(
+                    chat_id=LOG_CHANNEL,
+                    text=log_text,
+                    parse_mode="HTML"
+                )
+            except Exception as log_err:
+                logger.warning(f"Failed to send gatekeeper kick log: {log_err}")
+
         logger.info(f"ENFORCEMENT: Kicked {display_name} ({user_id}) from social chat (1st offense)")
         return True
 
@@ -90,6 +109,24 @@ async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = Non
             asyncio.create_task(_delete_ban_msg())
         except Exception as e:
             logger.error(f"Failed to send ban notification for {user_id}: {e}")
+
+        # Send Log Channel update
+        if LOG_CHANNEL:
+            try:
+                log_text = (
+                    f"🚫 <b>GATEKEEPER BAN (Permanent)</b>\n"
+                    f"──────────────────────────\n"
+                    f"👤 <b>User:</b> {display_name} (<code>{user_id}</code>)\n"
+                    f"📋 <b>Action:</b> Permanently Banned from Social Chat\n"
+                    f"ℹ️ <b>Reason:</b> Repeated entry attempt (Offense #{kick_count + 1}) without main group verification."
+                )
+                await bot.send_message(
+                    chat_id=LOG_CHANNEL,
+                    text=log_text,
+                    parse_mode="HTML"
+                )
+            except Exception as log_err:
+                logger.warning(f"Failed to send gatekeeper ban log: {log_err}")
 
         logger.info(f"ENFORCEMENT: Banned {display_name} ({user_id}) from social chat (offense #{kick_count + 1})")
         return True

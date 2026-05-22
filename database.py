@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def connect_db():
     async with aiosqlite.connect(DB_PATH, timeout=5.0) as db:
+        db.row_factory = aiosqlite.Row
         await db.execute("PRAGMA journal_mode=WAL")
         await db.execute("PRAGMA busy_timeout=5000")
         yield db
@@ -14,7 +15,7 @@ async def init_db():
     async with connect_db() as db:
         await db.execute("""
             CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
+                id INTEGER PRIMARY KEY,
                 username TEXT,
                 is_verified INTEGER DEFAULT 0,
                 vouched_by INTEGER DEFAULT NULL,
@@ -31,7 +32,7 @@ async def init_db():
                 old_username TEXT,
                 new_username TEXT,
                 changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (user_id)
+                FOREIGN KEY (user_id) REFERENCES users (id)
             )
         """)
         await db.execute("""
@@ -96,8 +97,8 @@ async def init_db():
             ('flag_reason', 'TEXT'),
             ('is_sex_worker', 'INTEGER DEFAULT 0'),
             ('is_dangerous', 'INTEGER DEFAULT 0'),
-            ('first_seen', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
-            ('last_seen', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+            ('first_seen', 'TIMESTAMP'),
+            ('last_seen', 'TIMESTAMP'),
             ('is_verified', 'INTEGER DEFAULT 0'),
             ('vouched_by', 'INTEGER DEFAULT NULL'),
             ('vouch_count', 'INTEGER DEFAULT 0'),
@@ -126,7 +127,7 @@ async def get_user_by_id_or_username(identifier):
     async with connect_db() as db:
         ident_str = str(identifier).strip().lstrip('@')
         if ident_str.isdigit():
-            async with db.execute("SELECT * FROM users WHERE user_id = ?", (int(ident_str),)) as cursor:
+            async with db.execute("SELECT * FROM users WHERE id = ?", (int(ident_str),)) as cursor:
                 return await cursor.fetchone()
         else:
             async with db.execute("SELECT * FROM users WHERE username = ?", (ident_str,)) as cursor:
@@ -134,15 +135,15 @@ async def get_user_by_id_or_username(identifier):
 
 async def add_or_update_user(user_id, username):
     async with connect_db() as db:
-        async with db.execute("SELECT username FROM users WHERE user_id = ?", (user_id,)) as cursor:
+        async with db.execute("SELECT username FROM users WHERE id = ?", (user_id,)) as cursor:
             row = await cursor.fetchone()
         if row:
             old_username = row[0]
             if old_username != username:
                 await db.execute("INSERT INTO username_history (user_id, old_username, new_username) VALUES (?, ?, ?)", (user_id, old_username, username))
-                await db.execute("UPDATE users SET username = ? WHERE user_id = ?", (username, user_id))
+                await db.execute("UPDATE users SET username = ? WHERE id = ?", (username, user_id))
         else:
-            await db.execute("INSERT INTO users (user_id, username) VALUES (?, ?)", (user_id, username))
+            await db.execute("INSERT INTO users (id, username) VALUES (?, ?)", (user_id, username))
         await db.commit()
 
 async def get_username_history(user_id):
@@ -160,7 +161,7 @@ async def verify_user(identifier, status=1, vouched_by=None):
         target_uid = int(ident_str)
         username = f"User_{target_uid}"
         async with connect_db() as db:
-            async with db.execute("SELECT username FROM users WHERE user_id = ?", (target_uid,)) as cursor:
+            async with db.execute("SELECT username FROM users WHERE id = ?", (target_uid,)) as cursor:
                 row = await cursor.fetchone()
                 if row: username = row[0]
         await add_or_update_user(target_uid, username)
@@ -168,26 +169,26 @@ async def verify_user(identifier, status=1, vouched_by=None):
         return False
     async with connect_db() as db:
         status_text = 'active' if status == 1 else 'flagged'
-        await db.execute("UPDATE users SET is_verified = ?, vouched_by = ?, status = ? WHERE user_id = ?", (status, vouched_by, status_text, target_uid))
+        await db.execute("UPDATE users SET is_verified = ?, vouched_by = ?, status = ? WHERE id = ?", (status, vouched_by, status_text, target_uid))
         await db.commit()
     return target_uid
 
 async def get_reputation_score(user_id):
     async with connect_db() as db:
-        async with db.execute("SELECT vouches FROM users WHERE user_id = ?", (user_id,)) as cursor:
+        async with db.execute("SELECT vouches FROM users WHERE id = ?", (user_id,)) as cursor:
             row = await cursor.fetchone()
             return row[0] if row else 0
 
 async def is_dangerous_user(user_id):
     async with connect_db() as db:
-        async with db.execute("SELECT is_flagged, is_dangerous, flag_reason FROM users WHERE user_id = ?", (user_id,)) as cursor:
+        async with db.execute("SELECT is_flagged, is_dangerous, flag_reason FROM users WHERE id = ?", (user_id,)) as cursor:
             row = await cursor.fetchone()
             if row and (row[0] == 1 or row[1] == 1): return True, row[2]
     return False, None
 
 async def get_all_verified_users():
     async with connect_db() as db:
-        async with db.execute("SELECT user_id FROM users WHERE is_verified = 1") as cursor:
+        async with db.execute("SELECT id FROM users WHERE is_verified = 1") as cursor:
             rows = await cursor.fetchall()
             return [row[0] for row in rows]
 
@@ -201,22 +202,22 @@ async def get_stats():
 
 async def get_kick_count(user_id):
     async with connect_db() as db:
-        async with db.execute("SELECT kick_count FROM users WHERE user_id = ?", (user_id,)) as cursor:
+        async with db.execute("SELECT kick_count FROM users WHERE id = ?", (user_id,)) as cursor:
             row = await cursor.fetchone()
             return row[0] if row else 0
 
 async def increment_kick_count(user_id):
     async with connect_db() as db:
         # Ensure user exists first
-        async with db.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,)) as cursor:
+        async with db.execute("SELECT id FROM users WHERE id = ?", (user_id,)) as cursor:
             if not await cursor.fetchone():
-                await db.execute("INSERT INTO users (user_id, username, kick_count) VALUES (?, ?, 1)", (user_id, f"User_{user_id}"))
+                await db.execute("INSERT INTO users (id, username, kick_count) VALUES (?, ?, 1)", (user_id, f"User_{user_id}"))
             else:
-                await db.execute("UPDATE users SET kick_count = kick_count + 1 WHERE user_id = ?", (user_id,))
+                await db.execute("UPDATE users SET kick_count = kick_count + 1 WHERE id = ?", (user_id,))
         await db.commit()
 
 async def get_all_known_user_ids():
     async with connect_db() as db:
-        async with db.execute("SELECT user_id FROM users") as cursor:
+        async with db.execute("SELECT id FROM users") as cursor:
             rows = await cursor.fetchall()
             return [row[0] for row in rows]
