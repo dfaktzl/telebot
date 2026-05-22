@@ -36,14 +36,14 @@ async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = Non
         await increment_kick_count(user_id)
 
         try:
+            kick_tpl = await get_setting(
+                'msg_kick_notification',
+                '⚠️ <b>{display_name}</b> has been removed from this channel.\n──────────────────────────\n📋 <b>Reason:</b> Not a verified member of our main group.\nℹ️ Join our main group first to gain access here.\n\n<i>This is their first warning. A second attempt will result in a permanent ban.</i>'
+            )
             kick_msg = await bot.send_message(
                 chat_id,
-                f"\u26a0\ufe0f **{display_name}** has been removed from this channel.\n"
-                f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-                f"\U0001f4cb **Reason:** Not a verified member of our main group.\n"
-                f"\u2139\ufe0f Join our main group first to gain access here.\n\n"
-                f"_This is their first warning. A second attempt will result in a permanent ban._",
-                parse_mode="Markdown"
+                kick_tpl.format(display_name=display_name),
+                parse_mode="HTML"
             )
             # Auto-delete the notification after 5 minutes
             async def _delete_kick_msg(msg=kick_msg):
@@ -71,13 +71,14 @@ async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = Non
         await increment_kick_count(user_id)
 
         try:
+            ban_tpl = await get_setting(
+                'msg_ban_notification',
+                '🚫 <b>{display_name}</b> has been permanently banned.\n──────────────────────────\n📋 <b>Reason:</b> Repeated entry without main group verification.\n❌ <i>This decision is final.</i>'
+            )
             ban_msg = await bot.send_message(
                 chat_id,
-                f"\U0001f6ab **{display_name}** has been permanently banned from this channel.\n"
-                f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-                f"\U0001f4cb **Reason:** Repeated entry without main group verification.\n"
-                f"\u274c This action is final.",
-                parse_mode="Markdown"
+                ban_tpl.format(display_name=display_name),
+                parse_mode="HTML"
             )
             # Auto-delete the notification after 10 minutes
             async def _delete_ban_msg(msg=ban_msg):
@@ -96,14 +97,12 @@ async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = Non
 
 @router.message(F.new_chat_members)
 async def on_social_chat_join(message: types.Message):
-    """When someone joins the social/market chat, check if they belong to the main group."""
-    enforcement_on = await get_setting('enforcement_enabled', '1')
-    if enforcement_on != '1':
-        return
-
+    """When someone joins the social/market chat, check if they belong to the main group and welcome them if allowed."""
     white_id = await get_setting('white_channel_id', '0')
     if str(message.chat.id) != white_id:
         return  # Not the social chat, ignore
+
+    enforcement_on = await get_setting('enforcement_enabled', '1')
 
     for member in message.new_chat_members:
         if member.is_bot:
@@ -112,10 +111,33 @@ async def on_social_chat_join(message: types.Message):
         # Record the user in DB
         await add_or_update_user(member.id, member.username)
 
-        # Enforce
-        await enforce_user(
-            message.bot,
-            member.id,
-            message.chat.id,
-            username=member.username
-        )
+        # Enforce if enabled
+        acted = False
+        if enforcement_on == '1':
+            acted = await enforce_user(
+                message.bot,
+                member.id,
+                message.chat.id,
+                username=member.username
+            )
+
+        # Welcome the user if they were allowed to stay (not kicked/banned)
+        if not acted:
+            timer = int(await get_setting('welcome_delete_timer', '600'))  # Default to 10 minutes
+            msg_tpl = await get_setting('msg_welcome', 'Welcome, {user_mention}!')
+            mention = member.mention_html()
+            text = msg_tpl.format(user_mention=mention, timer=timer)
+            try:
+                sent = await message.answer(text, parse_mode="HTML")
+                
+                # Auto-delete in background
+                async def _delete_later(msg=sent, delay=timer):
+                    await asyncio.sleep(delay)
+                    try:
+                        await msg.delete()
+                    except Exception:
+                        pass
+                asyncio.create_task(_delete_later())
+            except Exception as e:
+                logger.error(f"Failed to send welcome message: {e}")
+

@@ -1,15 +1,21 @@
 import re
+import sys
+import os
 import asyncio
-import aiosqlite
+from database import connect_db, init_db
 
-FILE_PATH = r"C:\Users\defak\OneDrive\Desktop\vouches_export_50800.txt"
-DB_PATH = "gatekeeper.db"
+DEFAULT_FILE_PATH = r"C:\Users\defak\OneDrive\Desktop\vouches_export_50800.txt"
 
 async def run_import():
-    print(f"Starting optimized import from {FILE_PATH}...")
+    file_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_FILE_PATH
+    print(f"Starting optimized import from {file_path}...")
     
+    if not os.path.exists(file_path):
+        print(f"❌ Legacy file not found: {file_path}")
+        return
+
     try:
-        with open(FILE_PATH, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
             
             chunks = content.split("------------------------------")
@@ -54,7 +60,11 @@ async def run_import():
             
             data = [(uid, name, 1, 'active') for uid, name in unique_verified.items()]
             
-            async with aiosqlite.connect(DB_PATH) as db:
+            # Initialize database migrations/tables first
+            print("Ensuring database schema is fully initialized and migrated...")
+            await init_db()
+            
+            async with connect_db() as db:
                 await db.executemany(
                     "INSERT OR REPLACE INTO users (user_id, username, is_verified, status) VALUES (?, ?, ?, ?)",
                     data
@@ -62,7 +72,7 @@ async def run_import():
                 await db.commit()
 
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error during legacy import: {e}")
         return
 
     print(f"✅ Import complete! {len(unique_verified)} users are now verified.")
