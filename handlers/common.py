@@ -16,7 +16,7 @@ async def is_fully_verified(bot: Bot, user_id: int):
     
     # 2. Check Database Verification
     user = await get_user_by_id_or_username(user_id)
-    if user and user[2]: return True
+    if user and user['is_verified']: return True
     
     # 3. Check Black Channel Membership (Auto-Verification)
     in_black = await is_black_channel_member(bot, user_id)
