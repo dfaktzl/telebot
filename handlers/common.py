@@ -2,7 +2,8 @@ from aiogram import Router, types, F, Bot
 from aiogram.filters import Command
 from database import (
     get_user_by_id_or_username, verify_user, add_or_update_user, 
-    get_setting, is_dangerous_user, get_reputation_score
+    get_setting, is_dangerous_user, get_reputation_score,
+    update_user_gatekeeper_status
 )
 from utils.helpers import is_black_channel_member
 from datetime import datetime, timezone
@@ -16,10 +17,14 @@ async def is_fully_verified(bot: Bot, user_id: int):
     
     # 2. Check Database Verification
     user = await get_user_by_id_or_username(user_id)
-    if user and user['is_verified']: return True
+    if user and user['is_verified']:
+        in_black = await is_black_channel_member(bot, user_id)
+        await update_user_gatekeeper_status(user_id, 1 if in_black else 0)
+        return True
     
     # 3. Check Black Channel Membership (Auto-Verification)
     in_black = await is_black_channel_member(bot, user_id)
+    await update_user_gatekeeper_status(user_id, 1 if in_black else 0)
     if in_black:
         # Auto-import and verify if they are in the black channel
         await verify_user(user_id, 1)

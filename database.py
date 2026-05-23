@@ -22,7 +22,8 @@ async def init_db():
                 vouch_count INTEGER DEFAULT 0,
                 join_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 status TEXT DEFAULT 'active',
-                kick_count INTEGER DEFAULT 0
+                kick_count INTEGER DEFAULT 0,
+                in_gatekeeper INTEGER DEFAULT 0
             )
         """)
         await db.execute("""
@@ -106,6 +107,7 @@ async def init_db():
             ('vouch_count', 'INTEGER DEFAULT 0'),
             ('status', "TEXT DEFAULT 'active'"),
             ('kick_count', 'INTEGER DEFAULT 0'),
+            ('in_gatekeeper', 'INTEGER DEFAULT 0'),
         ]
         
         for col_name, col_type in migration_needed:
@@ -223,3 +225,8 @@ async def get_all_known_user_ids():
         async with db.execute("SELECT id FROM users") as cursor:
             rows = await cursor.fetchall()
             return [row[0] for row in rows]
+
+async def update_user_gatekeeper_status(user_id, in_gatekeeper):
+    async with connect_db() as db:
+        await db.execute("UPDATE users SET in_gatekeeper = ? WHERE id = ?", (in_gatekeeper, user_id))
+        await db.commit()

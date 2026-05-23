@@ -2,7 +2,8 @@ import asyncio
 import logging
 from aiogram import Router, types, F, Bot
 from database import (
-    get_setting, get_kick_count, increment_kick_count, add_or_update_user
+    get_setting, get_kick_count, increment_kick_count, add_or_update_user,
+    update_user_gatekeeper_status
 )
 from utils.helpers import is_black_channel_member
 
@@ -18,6 +19,7 @@ async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = Non
 
     # Check if user is in the main group (black channel)
     in_main_group = await is_black_channel_member(bot, user_id)
+    await update_user_gatekeeper_status(user_id, 1 if in_main_group else 0)
     if in_main_group:
         return False  # User is legit, no action needed
 
