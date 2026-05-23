@@ -144,7 +144,3 @@ async def cmd_letmein(message: types.Message):
         "⚠️ <i>Important: You must add <b>@TryForgetThis</b> to your phone contacts first, or the message may not deliver!</i>"
     )
     await message.answer(resp, parse_mode="HTML")
-
-
-
-
