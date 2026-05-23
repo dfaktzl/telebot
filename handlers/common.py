@@ -135,4 +135,16 @@ async def cmd_link(message: types.Message):
     await message.answer(f"{msg_granted}\n\n🔗 <b>Your Entry Link:</b>\n{invite_link}", parse_mode="HTML")
 
 
+@router.message(Command("LetMeIn", "letmein"))
+async def cmd_letmein(message: types.Message):
+    resp = (
+        "📥 <b>GATEWAY ENTRY REQUEST</b>\n"
+        "──────────────────────────\n"
+        "To request entry to the undeletable group, please message <b>@TryForgetThis</b>.\n\n"
+        "⚠️ <i>Important: You must add <b>@TryForgetThis</b> to your phone contacts first, or the message may not deliver!</i>"
+    )
+    await message.answer(resp, parse_mode="HTML")
+
+
+
 

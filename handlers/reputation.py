@@ -30,6 +30,9 @@ async def _get_patterns():
 
 @router.message(F.text)
 async def content_guardian(message: types.Message):
+    if message.from_user and not message.from_user.is_bot:
+        await add_or_update_user(message.from_user.id, message.from_user.username)
+
     # 1. Check if we are in the White Channel
     white_id = await get_setting('white_channel_id', '0')
     if str(message.chat.id) == white_id:

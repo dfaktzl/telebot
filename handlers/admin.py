@@ -83,12 +83,59 @@ async def cb_config(callback: types.CallbackQuery):
         types.InlineKeyboardButton(text=f"{'🟢' if illegal_det == '1' else '🔴'} Illegal Check", callback_data="toggle_illegal"),
         types.InlineKeyboardButton(text="🔗 Set Link", callback_data="admin_update_link")
     )
+    builder.row(
+        types.InlineKeyboardButton(text="⏱️ Delete Timers", callback_data="admin_timers_menu")
+    )
     builder.row(types.InlineKeyboardButton(text="⬅️ Back", callback_data="admin_main"))
     
     await callback.message.edit_text(
         "⚙️ **System Configuration**\n"
         f"──────────────────────────\n"
         "Toggle system features instantly. Changes take effect immediately without restart.",
+        reply_markup=builder.as_markup()
+    )
+    await callback.answer()
+
+@router.callback_query(F.data == "admin_timers_menu")
+async def cb_timers_menu(callback: types.CallbackQuery):
+    welcome = await get_setting('welcome_delete_timer', '600')
+    kick = await get_setting('kick_delete_timer', '300')
+    ban = await get_setting('ban_delete_timer', '600')
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        types.InlineKeyboardButton(text=f"Welcome: {'❌ OFF' if welcome=='0' else f'{int(welcome)//60}m'}", callback_data="admin_edit_timer_welcome"),
+        types.InlineKeyboardButton(text=f"Kick: {'❌ OFF' if kick=='0' else f'{int(kick)//60}m'}", callback_data="admin_edit_timer_kick"),
+        types.InlineKeyboardButton(text=f"Ban: {'❌ OFF' if ban=='0' else f'{int(ban)//60}m'}", callback_data="admin_edit_timer_ban")
+    )
+    builder.row(types.InlineKeyboardButton(text="⬅️ Back", callback_data="admin_config"))
+    
+    await callback.message.edit_text(
+        "⏱️ **Message Delete Timers**\n"
+        "──────────────────────────\n"
+        "Configure how long notifications stay in chat groups before self-destructing. Set to 0 to disable.",
+        reply_markup=builder.as_markup()
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("admin_edit_timer_"))
+async def cb_edit_timer(callback: types.CallbackQuery):
+    key = callback.data.replace("admin_edit_timer_", "")
+    full_key = f"{key}_delete_timer"
+    current = await get_setting(full_key, "0")
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="⬅️ Back", callback_data="admin_timers_menu"))
+    
+    await callback.message.edit_text(
+        f"⏱️ **Update Delete Timer:** `{full_key}`\n"
+        "──────────────────────────\n"
+        f"Current: `{current}` seconds\n\n"
+        "To update this timer, send:\n"
+        f"`/setsetting {full_key} <seconds>`\n\n"
+        "Example:\n"
+        f"`/setsetting {full_key} 300` (5 minutes)\n"
+        f"`/setsetting {full_key} 0` (disable deletion)",
         reply_markup=builder.as_markup()
     )
     await callback.answer()

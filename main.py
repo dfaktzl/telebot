@@ -139,6 +139,31 @@ async def main():
     # Start Polling
     logger.info("Bot is starting...")
     await bot.delete_webhook(drop_pending_updates=True)
+
+    # Register commands with Telegram
+    try:
+        from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
+        from config import ADMIN_IDS
+        
+        # Public Command (only /letmein is public)
+        public_commands = [
+            BotCommand(command="letmein", description="Gain entry to an undeletable group if you are known and trusted")
+        ]
+        await bot.set_my_commands(public_commands, scope=BotCommandScopeDefault())
+        
+        # Admin Commands (only visible to admins in DMs)
+        admin_commands = public_commands + [
+            BotCommand(command="admin", description="Admin Control Panel"),
+            BotCommand(command="status", description="Check bot system and OCI server status"),
+        ]
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=admin_id))
+            except Exception as e:
+                logger.warning(f"Failed to set admin commands for {admin_id}: {e}")
+    except Exception as e:
+        logger.error(f"Failed to set commands menu: {e}")
+
     await dp.start_polling(bot)
 
 if __name__ == "__main__":

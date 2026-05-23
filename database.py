@@ -79,6 +79,8 @@ async def init_db():
             ('msg_kick_notification', '⚠️ <b>{display_name}</b> has been removed from this channel.\n──────────────────────────\n📋 <b>Reason:</b> Not a verified member of our main group.\nℹ️ Join our main group first to gain access here.\n\n<i>This is their first warning. A second attempt will result in a permanent ban.</i>'),
             ('msg_ban_notification', '🚫 <b>{display_name}</b> has been permanently banned.\n──────────────────────────\n📋 <b>Reason:</b> Repeated entry without main group verification.\n❌ <i>This decision is final.</i>'),
             ('welcome_delete_timer', '600'),
+            ('kick_delete_timer', '300'),
+            ('ban_delete_timer', '600'),
             ('enforcement_enabled', '1')
         ]
         for key, value in defaults:
