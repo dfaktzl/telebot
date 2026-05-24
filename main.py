@@ -9,7 +9,7 @@ from database import (
     init_db, get_setting, set_setting, get_all_verified_users,
     verify_user, add_or_update_user, get_all_known_user_ids
 )
-from handlers import common, admin, logger as log_handler, reputation
+from handlers import common, admin, logger as log_handler, reputation, marketverify, adminhelp
 from handlers import enforcement
 from utils.helpers import is_black_channel_member, safe_broadcast
 
@@ -87,7 +87,14 @@ async def enforcement_sweep():
 
         # They ARE in social chat — enforce main group membership
         from handlers.enforcement import enforce_user
-        acted = await enforce_user(bot, uid, white_id_int)
+        acted = await enforce_user(
+            bot,
+            uid,
+            white_id_int,
+            username=member.user.username,
+            first_name=member.user.first_name,
+            last_name=member.user.last_name
+        )
         if acted:
             actions_taken += 1
 
@@ -112,7 +119,12 @@ async def handle_join_request(event: types.ChatJoinRequest):
             await bot.decline_chat_join_request(event.chat.id, event.from_user.id)
             return
 
-        await add_or_update_user(event.from_user.id, event.from_user.username)
+        await add_or_update_user(
+            event.from_user.id,
+            event.from_user.username,
+            first_name=event.from_user.first_name,
+            last_name=event.from_user.last_name
+        )
 
 # Main
 async def main():
@@ -122,6 +134,8 @@ async def main():
     # Register Handlers (Commands take priority)
     dp.include_router(admin.router)
     dp.include_router(enforcement.router)  # Enforcement before common so join checks fire first
+    dp.include_router(marketverify.router)
+    dp.include_router(adminhelp.router)
     dp.include_router(common.router)
     dp.include_router(reputation.router)
     dp.include_router(log_handler.router)

@@ -167,11 +167,29 @@ async def on_social_chat_join(message: types.Message):
         # Welcome the user if they were allowed to stay (not kicked/banned)
         if not acted:
             timer = int(await get_setting('welcome_delete_timer', '600'))  # Default to 10 minutes
-            msg_tpl = await get_setting('msg_welcome', 'Welcome, {user_mention}!')
-            mention = member.mention_html()
-            text = msg_tpl.format(user_mention=mention, timer=timer)
+            
+            u_mention = member.mention_html()
+            u_username = f"@{member.username}" if member.username else "None"
+            u_id = member.id
+            
+            welcome_text = (
+                 f"🌟 <b>WELCOME TO THE COMMUNITY</b> 🌟\n"
+                 f"──────────────────────────\n"
+                 f"👋 Welcome to the social group, {u_mention}!\n\n"
+                 f"👤 <b>Profile Details:</b>\n"
+                 f"├─ 🏷️ <b>Username:</b> {u_username}\n"
+                 f"└─ 🆔 <b>User ID:</b> <code>{u_id}</code>\n\n"
+                 f"✨ <i>Enjoy your stay, read the pinned rules, and conduct yourself respectfully!</i>\n"
+                 f"──────────────────────────\n"
+                 f"⏳ <i>This welcome message self-destructs in {timer} seconds.</i>"
+            )
+            
             try:
-                sent = await message.answer(text, parse_mode="HTML")
+                from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="📖 Start Welcome Guide", callback_data="start_welcome_guide")]
+                ])
+                sent = await message.answer(welcome_text, parse_mode="HTML", reply_markup=kb)
                 
                 # Auto-delete in background if timer is enabled (> 0)
                 if timer > 0:
@@ -184,4 +202,94 @@ async def on_social_chat_join(message: types.Message):
                     asyncio.create_task(_delete_later())
             except Exception as e:
                 logger.error(f"Failed to send welcome message: {e}")
+
+
+@router.callback_query(F.data == "start_welcome_guide")
+async def cb_start_welcome_guide(callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
+    first_name = callback_query.from_user.first_name
+    
+    # Premium Onboarding Guide Text for private DM
+    guide_text = (
+        f"📖 <b>WELCOME GUIDE & TUTORIAL</b>\n"
+        f"──────────────────────────\n"
+        f"Hello <a href=\"tg://user?id={user_id}\">{first_name}</a>! Welcome to our private community.\n\n"
+        f"🛡️ <b>ABOUT THE REPUTATION BOT</b>\n"
+        f"We use a highly redundant permanent reputation system to protect members from fraud:\n"
+        f"• <b>Unique User IDs:</b> Vouches follow your Telegram User ID (<code>{user_id}</code>) persistently, even if you edit your username!\n"
+        f"• <b>Sybil Shield:</b> New accounts have strict cooldowns and must be verified to interact with specific chats.\n\n"
+        f"💡 <b>QUICK COMMANDS TUTORIAL</b>\n"
+        f"• <code>/check</code> — View your own vouch score and history.\n"
+        f"• <code>/check &lt;User ID or @username&gt;</code> — Lookup another member's trust record.\n"
+        f"• Reply <code>/check</code> to anyone's message in group chats to audit them.\n\n"
+        f"✅ <b>VOUCHING FOR OTHERS (High-Trust Entry)</b>\n"
+        f"Vouches represent active successful trades or peer reviews:\n"
+        f"• Reply to a trusted peer's message with <code>+vouch Great trader!</code> or <code>+1</code>.\n"
+        f"• Or run: <code>/vouch &lt;User ID&gt; [reason]</code> in our DM.\n\n"
+        f"⚠️ <b>POLICIES & SECURITY RULES</b>\n"
+        f"• 2 vouches max per 24 hours.\n"
+        f"• Cooldown per user: 36 hours.\n"
+        f"• Cooldown for new accounts to vouch: 48 hours.\n"
+        f"• ⛔ <b>ZERO TOLERANCE FOR ILLEGAL/DRUG TERMS:</b> "
+        f"<b>You MUST NOT use drug names, illegal terminology, weapons, or fraud terms in your vouches!</b> "
+        f"<b>You gain absolutely nothing from adding illegal terms.</b> Just saying _\"stuff was good, on time, would deal with again\"_ is **perfect and preferred**.\n"
+        f"<b>Violations will trigger an instant vouch rejection + permanent ban!</b>\n\n"
+        f"──────────────────────────\n"
+        f"<i>To start checking profiles or link your account, use Vouch Checker: @VouchCheckerBot. Enjoy your stay!</i>"
+    )
+    
+    try:
+        await callback_query.bot.send_message(
+            chat_id=user_id,
+            text=guide_text,
+            parse_mode="HTML",
+            disable_web_page_preview=True
+        )
+        await callback_query.answer("📨 Guide successfully sent to your private DMs!", show_alert=True)
+    except Exception as e:
+        logger.warning(f"Failed to DM welcome guide to {user_id}: {e}")
+        await callback_query.answer(
+            "⚠️ Unable to DM you! Please click @VouchCheckerBot and send /start first, then try again.",
+            show_alert=True
+        )
+
+
+@router.chat_member()
+async def on_chat_member_join_log(event: types.ChatMemberUpdated, bot: Bot):
+    """Listens to all chat member status changes and logs user joins to any group/channel the bot is in to LOG_CHANNEL."""
+    from config import LOG_CHANNEL
+    if not LOG_CHANNEL:
+        return
+
+    old_status = event.old_chat_member.status
+    new_status = event.new_chat_member.status
+
+    was_in = old_status in ["member", "administrator", "creator"]
+    is_in = new_status in ["member", "administrator", "creator"]
+
+    if is_in and not was_in:
+        # User joined! Let's log it.
+        user = event.new_chat_member.user
+        if user.is_bot:
+            return
+
+        from html import escape
+        from datetime import datetime, timezone
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        u_fn = escape(user.first_name) if user.first_name else "Unknown"
+        u_ln = escape(user.last_name) if user.last_name else "None"
+        u_un = f"@{escape(user.username)}" if user.username else "None"
+        chat_title = escape(event.chat.title) if event.chat.title else "Group"
+
+        log_html = (
+            f"📥 <b>User joined chat {chat_title}</b>\n"
+            f"👤 <b>User:</b> {u_fn} {u_ln} ({u_un}) | 🆔 <b>ID:</b> <code>{user.id}</code>\n"
+            f"⏱️ <b>Time:</b> <code>{now_str}</code>"
+        )
+        try:
+            await bot.send_message(chat_id=LOG_CHANNEL, text=log_html, parse_mode="HTML")
+        except Exception as log_err:
+            logger.warning(f"Failed to send join log for user {user.id} to LOG_CHANNEL: {log_err}")
+
 

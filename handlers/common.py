@@ -135,9 +135,45 @@ async def cmd_link(message: types.Message):
         await message.answer(msg_text.format(user_id=user_id), parse_mode="HTML")
         return
 
-    invite_link = await get_setting('invite_link', 'Contact Admin for link.')
     msg_granted = await get_setting('msg_access_granted', 'Access Granted!')
-    await message.answer(f"{msg_granted}\n\n🔗 <b>Your Entry Link:</b>\n{invite_link}", parse_mode="HTML")
+    default_link = await get_setting('invite_link', 'None')
+
+    # Support /link <type> query (e.g. /link market)
+    args = message.text.split()
+    if len(args) > 1:
+        requested_type = args[1].lower().strip()
+        url = await get_setting(f'invite_link_{requested_type}', '')
+        if url:
+            await message.answer(f"{msg_granted}\n\n🔗 <b>Your {requested_type.capitalize()} Entry Link:</b>\n{url}", parse_mode="HTML")
+            return
+        elif requested_type == "default" and default_link and default_link.lower() != 'none':
+            await message.answer(f"{msg_granted}\n\n🔗 <b>Your Default Entry Link:</b>\n{default_link}", parse_mode="HTML")
+            return
+        else:
+            await message.answer(f"❌ <b>Link category `{requested_type}` not found.</b>\nRun `/link` to see all configured links.", parse_mode="HTML")
+            return
+
+    # Check if there are multiple configured links
+    configured_types_str = await get_setting('invite_link_types', '')
+    configured_types = [t.strip() for t in configured_types_str.split(',') if t.strip()]
+    
+    links_text = []
+    
+    # 1. Add default link if configured
+    if default_link and default_link.lower() != 'none':
+        links_text.append(f"🔗 <b>Default Entry Link:</b>\n{default_link}")
+        
+    # 2. Add type-specific links
+    for link_type in configured_types:
+        url = await get_setting(f'invite_link_{link_type}', '')
+        if url:
+            links_text.append(f"🔗 <b>{link_type.capitalize()} Entry Link:</b>\n{url}")
+            
+    if not links_text:
+        links_text.append("Contact Admin for link.")
+        
+    formatted_links = "\n\n".join(links_text)
+    await message.answer(f"{msg_granted}\n\n{formatted_links}", parse_mode="HTML")
 
 
 @router.message(Command("LetMeIn", "letmein"))
