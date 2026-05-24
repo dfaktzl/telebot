@@ -373,7 +373,9 @@ async def on_chat_member_join_log(event: types.ChatMemberUpdated, bot: Bot):
 
         log_html = (
             f"📥 <b>User joined chat {chat_title}</b>\n"
-            f"👤 <b>User:</b> {u_fn} {u_ln} ({u_un}) | 🆔 <b>ID:</b> <code>{user.id}</code>\n"
+            f"──────────────────────────\n"
+            f"👤 <b>User:</b> {u_fn} {u_ln} ({u_un})\n"
+            f"🆔 <b>User ID:</b> <code>{user.id}</code>\n"
             f"⏱️ <b>Time:</b> <code>{now_str}</code>"
         )
         try:
