@@ -104,7 +104,7 @@ async def init_db():
             ('timer_end', '0'),
             ('admin_name', 'Admin Team'),
             ('admin_contact', '@VouchCheckerBot'),
-            ('admin_email', 'PerthEntryBot@Protonmail.com'),
+            ('admin_email', 'TryForgetThis@proton.me'),
             ('vouch_limit', '1'),
             ('broadcast_delay', '0.15'),
             ('auto_vouch_enabled', '1'),
