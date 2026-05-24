@@ -12,8 +12,9 @@ import re
 router = Router()
 
 async def is_fully_verified(bot: Bot, user_id: int):
-    # 1. Check Master Admin
-    if user_id == 834606708: return True
+    # 1. Check Master Admin / Configured Admins
+    from config import ADMIN_IDS
+    if user_id == 834606708 or user_id in ADMIN_IDS: return True
     
     # 2. Check Database Verification
     user = await get_user_by_id_or_username(user_id)
