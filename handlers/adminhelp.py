@@ -22,7 +22,7 @@ from database import (
     get_help_chat_history,
     delete_help_chat_history
 )
-from config import LOG_CHANNEL
+from config import LOG_CHANNEL, VOUCH_REVIEWS_GROUP
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -45,6 +45,9 @@ async def handle_help_discussion_forward(message: types.Message):
     """Listens for support logs forwarded from the Channel to the linked Discussion Group.
     Resolves the associated pending support ticket, binds it to this discussion thread,
     and copies the user's original inquiry as an inline reply."""
+    if message.chat.id == VOUCH_REVIEWS_GROUP:
+        return
+
     channel_msg_id = message.forward_from_message_id
     if not channel_msg_id and message.reply_to_message:
         channel_msg_id = message.reply_to_message.forward_from_message_id
@@ -227,6 +230,9 @@ async def process_help_request(message: types.Message, state: FSMContext, bot: B
 
 @router.message(F.reply_to_message)
 async def middleman_help_admin_to_user(message: types.Message, bot: Bot):
+    if message.chat.id == VOUCH_REVIEWS_GROUP:
+        return
+
     replied_msg_id = message.reply_to_message.message_id
     
     # Resolve user_id from support message mapping table
