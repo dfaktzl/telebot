@@ -290,11 +290,57 @@ async def cb_broadcast_start(callback: types.CallbackQuery):
 # --- COMMAND HANDLERS ---
 @router.message(Command("setchatlink", prefix="/."))
 async def cmd_setchatlink(message: types.Message):
-    if not await is_bot_admin(message.bot, message.from_user.id): return
-    args = message.text.split(maxsplit=1)
-    if len(args) < 2: return
-    await set_setting('invite_link', args[1])
-    await message.answer(f"🔗 **Invite Link Updated**\nNew: {args[1]}")
+    if message.from_user.id != MASTER_ADMIN_ID and not await is_bot_admin(message.bot, message.from_user.id): return
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer(
+            "ℹ️ **Usage:**\n`/setchatlink [type] <url>`\n\n"
+            "Example:\n"
+            "`/setchatlink market https://t.me/...`\n"
+            "`/setchatlink social https://t.me/...`\n"
+            "`/setchatlink https://t.me/...` (sets default link)"
+        )
+        return
+        
+    if len(args) == 2:
+        # Just URL, set the default
+        url = args[1]
+        await set_setting('invite_link', url)
+        await message.answer(f"🔗 **Default Invite Link Updated**\nNew: {url}")
+    elif len(args) >= 3:
+        # Both type and URL
+        link_type = args[1].lower().strip()
+        url = args[2]
+        
+        # Save type to active types list
+        configured_types_str = await get_setting('invite_link_types', '')
+        configured_types = [t.strip() for t in configured_types_str.split(',') if t.strip()]
+        if link_type not in configured_types:
+            configured_types.append(link_type)
+            await set_setting('invite_link_types', ','.join(configured_types))
+        
+        await set_setting(f'invite_link_{link_type}', url)
+        await message.answer(f"🔗 **Invite Link Updated** for type `{link_type}`\nNew: {url}")
+
+
+@router.message(Command("delchatlink", prefix="/."))
+async def cmd_delchatlink(message: types.Message):
+    if message.from_user.id != MASTER_ADMIN_ID and not await is_bot_admin(message.bot, message.from_user.id): return
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer("ℹ️ **Usage:**\n`/delchatlink <type>`\n\nExample:\n`/delchatlink market`")
+        return
+        
+    link_type = args[1].lower().strip()
+    configured_types_str = await get_setting('invite_link_types', '')
+    configured_types = [t.strip() for t in configured_types_str.split(',') if t.strip()]
+    if link_type in configured_types:
+        configured_types.remove(link_type)
+        await set_setting('invite_link_types', ','.join(configured_types))
+        await set_setting(f'invite_link_{link_type}', '')
+        await message.answer(f"❌ **Invite Link Removed** for type `{link_type}`")
+    else:
+        await message.answer(f"❌ **Link type `{link_type}` not found.**")
 
 @router.message(Command("blackchannel", prefix="/."))
 async def cmd_blackchannel(message: types.Message):
@@ -389,10 +435,29 @@ async def cmd_noweb(message: types.Message):
             
             if LOG_CHANNEL:
                 try:
+                    from html import escape
+                    from datetime import datetime, timezone
+                    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+                    fn = escape(message.from_user.first_name) if message.from_user.first_name else "Unknown"
+                    ln = escape(message.from_user.last_name) if message.from_user.last_name else "None"
+                    un = f"@{escape(message.from_user.username)}" if message.from_user.username else "None"
+
+                    log_html = (
+                        f"👮 <b>ADMIN MODERATION</b>\n"
+                        f"──────────────────────────\n"
+                        f"👤 <b>First Name:</b> {fn}\n"
+                        f"👤 <b>Last Name:</b> {ln}\n"
+                        f"🏷️ <b>Username:</b> {un}\n"
+                        f"🆔 <b>User ID:</b> <code>{message.from_user.id}</code>\n"
+                        f"⏱️ <b>Time:</b> <code>{now_str}</code>\n"
+                        f"──────────────────────────\n"
+                        f"📋 <b>Action:</b> Web Dashboard stopped via Telegram command <code>{escape(cmd_name)}</code>"
+                    )
                     await message.bot.send_message(
                         chat_id=LOG_CHANNEL,
-                        text=f"👮 **ADMIN MODERATION**: Web Dashboard stopped by {message.from_user.first_name} via Telegram `{cmd_name}`.",
-                        parse_mode="Markdown"
+                        text=log_html,
+                        parse_mode="HTML"
                     )
                 except Exception:
                     pass
@@ -457,10 +522,29 @@ async def cmd_webactive(message: types.Message):
                 
                 if LOG_CHANNEL:
                     try:
+                        from html import escape
+                        from datetime import datetime, timezone
+                        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+                        fn = escape(message.from_user.first_name) if message.from_user.first_name else "Unknown"
+                        ln = escape(message.from_user.last_name) if message.from_user.last_name else "None"
+                        un = f"@{escape(message.from_user.username)}" if message.from_user.username else "None"
+
+                        log_html = (
+                            f"👮 <b>ADMIN MODERATION</b>\n"
+                            f"──────────────────────────\n"
+                            f"👤 <b>First Name:</b> {fn}\n"
+                            f"👤 <b>Last Name:</b> {ln}\n"
+                            f"🏷️ <b>Username:</b> {un}\n"
+                            f"🆔 <b>User ID:</b> <code>{message.from_user.id}</code>\n"
+                            f"⏱️ <b>Time:</b> <code>{now_str}</code>\n"
+                            f"──────────────────────────\n"
+                            f"📋 <b>Action:</b> Web Dashboard started via Telegram command <code>/webactive</code>"
+                        )
                         await message.bot.send_message(
                             chat_id=LOG_CHANNEL,
-                            text=f"👮 **ADMIN MODERATION**: Web Dashboard started by {message.from_user.first_name} via Telegram `/webactive`.",
-                            parse_mode="Markdown"
+                            text=log_html,
+                            parse_mode="HTML"
                         )
                     except Exception:
                         pass
@@ -486,10 +570,30 @@ async def cmd_webactive(message: types.Message):
             subprocess.run("pm2 stop repbot-dashboard", shell=True, capture_output=True)
             if LOG_CHANNEL:
                 try:
+                    from html import escape
+                    from datetime import datetime, timezone
+                    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+                    fn = escape(message.from_user.first_name) if message.from_user.first_name else "Unknown"
+                    ln = escape(message.from_user.last_name) if message.from_user.last_name else "None"
+                    un = f"@{escape(message.from_user.username)}" if message.from_user.username else "None"
+
+                    log_html = (
+                        f"⚠️ <b>ADMIN WARNING</b>\n"
+                        f"──────────────────────────\n"
+                        f"👤 <b>First Name:</b> {fn}\n"
+                        f"👤 <b>Last Name:</b> {ln}\n"
+                        f"🏷️ <b>Username:</b> {un}\n"
+                        f"🆔 <b>User ID:</b> <code>{message.from_user.id}</code>\n"
+                        f"⏱️ <b>Time:</b> <code>{now_str}</code>\n"
+                        f"──────────────────────────\n"
+                        f"📋 <b>Action:</b> /webactive failed and defaulted to safety shutdown (weboff).\n"
+                        f"❌ <b>Error:</b> <code>{escape(str(e))}</code>"
+                    )
                     await message.bot.send_message(
                         chat_id=LOG_CHANNEL,
-                        text=f"⚠️ **ADMIN WARNING**: /webactive failed and defaulted to shutdown (weboff). Error: {str(e)}",
-                        parse_mode="Markdown"
+                        text=log_html,
+                        parse_mode="HTML"
                     )
                 except Exception:
                     pass

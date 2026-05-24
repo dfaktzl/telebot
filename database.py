@@ -42,6 +42,59 @@ async def init_db():
                 value TEXT
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS market_verify_tickets (
+                user_id INTEGER,
+                admin_message_id INTEGER,
+                user_message_id INTEGER,
+                status TEXT DEFAULT 'pending',
+                admin_chat_id INTEGER DEFAULT 834606708,
+                channel_message_id INTEGER DEFAULT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS market_verify_message_map (
+                message_id INTEGER PRIMARY KEY,
+                user_id INTEGER
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS admin_help_tickets (
+                user_id INTEGER,
+                admin_message_id INTEGER,
+                user_message_id INTEGER,
+                status TEXT DEFAULT 'pending',
+                admin_chat_id INTEGER DEFAULT 834606708,
+                channel_message_id INTEGER DEFAULT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS admin_help_message_map (
+                message_id INTEGER PRIMARY KEY,
+                user_id INTEGER
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS admin_help_chat_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                sender_name TEXT,
+                sender_role TEXT,
+                message_text TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS blacklist_users (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                reason TEXT,
+                banned_by TEXT,
+                banned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         
         defaults = [
             ('white_channel_id', '-1003769928131'),
@@ -113,6 +166,22 @@ async def init_db():
         for col_name, col_type in migration_needed:
             if col_name not in cols_found:
                 await db.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
+
+        # Migration for market_verify_tickets
+        cursor = await db.execute("PRAGMA table_info(market_verify_tickets)")
+        cols_found = [row[1] for row in await cursor.fetchall()]
+        if 'admin_chat_id' not in cols_found:
+            await db.execute("ALTER TABLE market_verify_tickets ADD COLUMN admin_chat_id INTEGER DEFAULT 834606708")
+        if 'channel_message_id' not in cols_found:
+            await db.execute("ALTER TABLE market_verify_tickets ADD COLUMN channel_message_id INTEGER DEFAULT NULL")
+
+        # Migration for admin_help_tickets
+        cursor = await db.execute("PRAGMA table_info(admin_help_tickets)")
+        cols_found = [row[1] for row in await cursor.fetchall()]
+        if 'admin_chat_id' not in cols_found:
+            await db.execute("ALTER TABLE admin_help_tickets ADD COLUMN admin_chat_id INTEGER DEFAULT 834606708")
+        if 'channel_message_id' not in cols_found:
+            await db.execute("ALTER TABLE admin_help_tickets ADD COLUMN channel_message_id INTEGER DEFAULT NULL")
         
         await db.commit()
 
@@ -137,17 +206,34 @@ async def get_user_by_id_or_username(identifier):
             async with db.execute("SELECT * FROM users WHERE username = ?", (ident_str,)) as cursor:
                 return await cursor.fetchone()
 
-async def add_or_update_user(user_id, username):
+async def add_or_update_user(user_id, username, first_name=None, last_name=None):
     async with connect_db() as db:
-        async with db.execute("SELECT username FROM users WHERE id = ?", (user_id,)) as cursor:
+        async with db.execute("SELECT username, first_name, last_name FROM users WHERE id = ?", (user_id,)) as cursor:
             row = await cursor.fetchone()
         if row:
             old_username = row[0]
+            old_first = row[1]
+            old_last = row[2]
+            
+            updates = []
+            params = []
+            
             if old_username != username:
                 await db.execute("INSERT INTO username_history (user_id, old_username, new_username) VALUES (?, ?, ?)", (user_id, old_username, username))
-                await db.execute("UPDATE users SET username = ? WHERE id = ?", (username, user_id))
+                updates.append("username = ?")
+                params.append(username)
+            if first_name and old_first != first_name:
+                updates.append("first_name = ?")
+                params.append(first_name)
+            if last_name and old_last != last_name:
+                updates.append("last_name = ?")
+                params.append(last_name)
+                
+            if updates:
+                params.append(user_id)
+                await db.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params)
         else:
-            await db.execute("INSERT INTO users (id, username) VALUES (?, ?)", (user_id, username))
+            await db.execute("INSERT INTO users (id, username, first_name, last_name) VALUES (?, ?, ?, ?)", (user_id, username, first_name, last_name))
         await db.commit()
 
 async def get_username_history(user_id):
@@ -229,4 +315,215 @@ async def get_all_known_user_ids():
 async def update_user_gatekeeper_status(user_id, in_gatekeeper):
     async with connect_db() as db:
         await db.execute("UPDATE users SET in_gatekeeper = ? WHERE id = ?", (in_gatekeeper, user_id))
+        await db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  MARKET VERIFICATION TICKETS HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def create_market_verify_ticket(user_id: int, admin_message_id: int, user_message_id: int, channel_message_id: int = None):
+    async with connect_db() as db:
+        # Mark previous pending tickets for this user as superseded
+        await db.execute(
+            "UPDATE market_verify_tickets SET status = 'superseded' WHERE user_id = ? AND status = 'pending'",
+            (user_id,)
+        )
+        await db.execute(
+            "INSERT INTO market_verify_tickets (user_id, admin_message_id, user_message_id, channel_message_id, status) VALUES (?, ?, ?, ?, 'pending')",
+            (user_id, admin_message_id, user_message_id, channel_message_id)
+        )
+        await db.commit()
+
+async def get_pending_ticket_by_user(user_id: int):
+    async with connect_db() as db:
+        async with db.execute(
+            "SELECT * FROM market_verify_tickets WHERE user_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1",
+            (user_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+async def get_user_id_by_admin_message(admin_message_id: int):
+    async with connect_db() as db:
+        async with db.execute(
+            "SELECT user_id FROM market_verify_message_map WHERE message_id = ?",
+            (admin_message_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else None
+
+async def add_market_message_mapping(message_id: int, user_id: int):
+    async with connect_db() as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO market_verify_message_map (message_id, user_id) VALUES (?, ?)",
+            (message_id, user_id)
+        )
+        await db.commit()
+
+async def update_ticket_last_messages(user_id: int, admin_chat_id: int = None, admin_message_id: int = None, user_message_id: int = None):
+    async with connect_db() as db:
+        if admin_chat_id is not None:
+            await db.execute(
+                "UPDATE market_verify_tickets SET admin_chat_id = ? WHERE user_id = ? AND status = 'pending'",
+                (admin_chat_id, user_id)
+            )
+        if admin_message_id is not None:
+            await db.execute(
+                "UPDATE market_verify_tickets SET admin_message_id = ? WHERE user_id = ? AND status = 'pending'",
+                (admin_message_id, user_id)
+            )
+        if user_message_id is not None:
+            await db.execute(
+                "UPDATE market_verify_tickets SET user_message_id = ? WHERE user_id = ? AND status = 'pending'",
+                (user_message_id, user_id)
+            )
+        await db.commit()
+
+async def verify_market_ticket(user_id: int):
+    async with connect_db() as db:
+        await db.execute(
+            "UPDATE market_verify_tickets SET status = 'verified' WHERE user_id = ? AND status = 'pending'",
+            (user_id,)
+        )
+        await db.commit()
+
+async def bind_market_ticket_to_discussion(channel_message_id: int, discussion_chat_id: int, discussion_message_id: int):
+    async with connect_db() as db:
+        # Find user_id associated with this channel message ID
+        async with db.execute(
+            "SELECT user_id FROM market_verify_tickets WHERE channel_message_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1",
+            (channel_message_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                user_id = row[0]
+                # Update ticket's admin_chat_id and admin_message_id
+                await db.execute(
+                    "UPDATE market_verify_tickets SET admin_chat_id = ?, admin_message_id = ? WHERE user_id = ? AND status = 'pending'",
+                    (discussion_chat_id, discussion_message_id, user_id)
+                )
+                await db.commit()
+                return user_id
+            return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  ADMIN HELP / SUPPORT TICKETS HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def create_admin_help_ticket(user_id: int, admin_message_id: int, user_message_id: int, channel_message_id: int = None):
+    async with connect_db() as db:
+        # Mark previous pending help tickets for this user as superseded
+        await db.execute(
+            "UPDATE admin_help_tickets SET status = 'superseded' WHERE user_id = ? AND status = 'pending'",
+            (user_id,)
+        )
+        await db.execute(
+            "INSERT INTO admin_help_tickets (user_id, admin_message_id, user_message_id, channel_message_id, status) VALUES (?, ?, ?, ?, 'pending')",
+            (user_id, admin_message_id, user_message_id, channel_message_id)
+        )
+        await db.commit()
+
+async def get_pending_help_ticket_by_user(user_id: int):
+    async with connect_db() as db:
+        async with db.execute(
+            "SELECT * FROM admin_help_tickets WHERE user_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1",
+            (user_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+async def get_user_id_by_help_message(admin_message_id: int):
+    async with connect_db() as db:
+        async with db.execute(
+            "SELECT user_id FROM admin_help_message_map WHERE message_id = ?",
+            (admin_message_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else None
+
+async def add_help_message_mapping(message_id: int, user_id: int):
+    async with connect_db() as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO admin_help_message_map (message_id, user_id) VALUES (?, ?)",
+            (message_id, user_id)
+        )
+        await db.commit()
+
+async def update_help_ticket_last_messages(user_id: int, admin_chat_id: int = None, admin_message_id: int = None, user_message_id: int = None):
+    async with connect_db() as db:
+        if admin_chat_id is not None:
+            await db.execute(
+                "UPDATE admin_help_tickets SET admin_chat_id = ? WHERE user_id = ? AND status = 'pending'",
+                (admin_chat_id, user_id)
+            )
+        if admin_message_id is not None:
+            await db.execute(
+                "UPDATE admin_help_tickets SET admin_message_id = ? WHERE user_id = ? AND status = 'pending'",
+                (admin_message_id, user_id)
+            )
+        if user_message_id is not None:
+            await db.execute(
+                "UPDATE admin_help_tickets SET user_message_id = ? WHERE user_id = ? AND status = 'pending'",
+                (user_message_id, user_id)
+            )
+        await db.commit()
+
+async def close_admin_help_ticket(user_id: int):
+    async with connect_db() as db:
+        await db.execute(
+            "UPDATE admin_help_tickets SET status = 'resolved' WHERE user_id = ? AND status = 'pending'",
+            (user_id,)
+        )
+        await db.commit()
+
+async def bind_help_ticket_to_discussion(channel_message_id: int, discussion_chat_id: int, discussion_message_id: int):
+    async with connect_db() as db:
+        # Find user_id associated with this channel message ID
+        async with db.execute(
+            "SELECT user_id FROM admin_help_tickets WHERE channel_message_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1",
+            (channel_message_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                user_id = row[0]
+                # Update ticket's admin_chat_id and admin_message_id
+                await db.execute(
+                    "UPDATE admin_help_tickets SET admin_chat_id = ?, admin_message_id = ? WHERE user_id = ? AND status = 'pending'",
+                    (discussion_chat_id, discussion_message_id, user_id)
+                )
+                await db.commit()
+                return user_id
+            return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  ADMIN HELP / SUPPORT CHAT HISTORY HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def add_help_chat_message(user_id: int, sender_name: str, sender_role: str, message_text: str):
+    async with connect_db() as db:
+        await db.execute(
+            "INSERT INTO admin_help_chat_history (user_id, sender_name, sender_role, message_text) VALUES (?, ?, ?, ?)",
+            (user_id, sender_name, sender_role, message_text)
+        )
+        await db.commit()
+
+async def get_help_chat_history(user_id: int):
+    async with connect_db() as db:
+        async with db.execute(
+            "SELECT sender_name, sender_role, message_text, timestamp FROM admin_help_chat_history WHERE user_id = ? ORDER BY timestamp ASC",
+            (user_id,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+async def delete_help_chat_history(user_id: int):
+    async with connect_db() as db:
+        await db.execute("DELETE FROM admin_help_chat_history WHERE user_id = ?", (user_id,))
         await db.commit()
