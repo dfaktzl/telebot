@@ -11,10 +11,10 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 
-async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = None):
+async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = None, **kwargs):
     """Core enforcement logic: check if user belongs to main group.
-    If not, kick (1st offense) or ban (2nd+ offense) from the social chat.
-    Returns True if action was taken, False if user is legitimate."""
+    If not, give 5 warnings before a kick, and then another 3 warnings before a permanent ban.
+    Returns True if action was taken (user was kicked or banned), False if user was just warned."""
     from config import LOG_CHANNEL
 
     # Check if user is in the main group (black channel)
@@ -26,49 +26,41 @@ async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = Non
     kick_count = await get_kick_count(user_id)
     display_name = f"@{username}" if username else f"User {user_id}"
 
-    if kick_count == 0:
-        # ── First offense: KICK ──
-        try:
-            await bot.ban_chat_member(chat_id, user_id)
-            # Immediately unban so they CAN rejoin (kick, not permaban)
-            await bot.unban_chat_member(chat_id, user_id, only_if_banned=True)
-        except Exception as e:
-            logger.error(f"Failed to kick {user_id} from {chat_id}: {e}")
-            return False
-
+    if kick_count < 5:
+        # Case A: Warn (Warning 1/5 to 5/5)
+        warn_num = kick_count + 1
         await increment_kick_count(user_id)
 
         try:
-            kick_tpl = await get_setting(
-                'msg_kick_notification',
-                '⚠️ <b>{display_name}</b> has been removed from this channel.\n──────────────────────────\n📋 <b>Reason:</b> Not a verified member of our main group.\nℹ️ Join our main group first to gain access here.\n\n<i>This is their first warning. A second attempt will result in a permanent ban.</i>'
-            )
-            kick_msg = await bot.send_message(
+            warn_msg = await bot.send_message(
                 chat_id,
-                kick_tpl.format(display_name=display_name),
+                f"⚠️ <b>{display_name}</b> has received a warning (Warning <b>{warn_num}/5</b>).\n"
+                f"──────────────────────────\n"
+                f"📋 <b>Reason:</b> Not a verified member of our main group.\n"
+                f"ℹ️ Please join our main group first to gain access here.\n\n"
+                f"<i>You will be kicked from this chat on the 6th attempt.</i>",
                 parse_mode="HTML"
             )
-            # Auto-delete the notification if timer is enabled (> 0)
-            kick_timer = int(await get_setting('kick_delete_timer', '300'))
-            if kick_timer > 0:
-                async def _delete_kick_msg(msg=kick_msg, delay=kick_timer):
+            # Auto-delete warning notification
+            warn_timer = int(await get_setting('kick_delete_timer', '300'))
+            if warn_timer > 0:
+                async def _delete_msg(msg=warn_msg, delay=warn_timer):
                     await asyncio.sleep(delay)
                     try:
                         await msg.delete()
                     except Exception:
                         pass
-                asyncio.create_task(_delete_kick_msg())
+                asyncio.create_task(_delete_msg())
         except Exception as e:
-            logger.error(f"Failed to send kick notification for {user_id}: {e}")
+            logger.error(f"Failed to send join warning notification for {user_id}: {e}")
 
-        # Send Log Channel update
         if LOG_CHANNEL:
             try:
                 log_text = (
-                    f"🚪 <b>GATEKEEPER EVICTION (Kick)</b>\n"
+                    f"🚪 <b>GATEKEEPER WARNING (Pre-Kick)</b>\n"
                     f"──────────────────────────\n"
                     f"👤 <b>User:</b> {display_name} (<code>{user_id}</code>)\n"
-                    f"📋 <b>Action:</b> Kicked from Social Chat (1st offense)\n"
+                    f"📋 <b>Action:</b> Warned (Warning {warn_num}/5)\n"
                     f"ℹ️ <b>Reason:</b> Not a verified member of the main group."
                 )
                 await bot.send_message(
@@ -77,16 +69,116 @@ async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = Non
                     parse_mode="HTML"
                 )
             except Exception as log_err:
-                logger.warning(f"Failed to send gatekeeper kick log: {log_err}")
+                logger.warning(f"Failed to send gatekeeper log: {log_err}")
 
-        logger.info(f"ENFORCEMENT: Kicked {display_name} ({user_id}) from social chat (1st offense)")
-        return True
+        logger.info(f"ENFORCEMENT: Warned {display_name} ({user_id}) (Warning {warn_num}/5)")
+        return False  # Not kicked/banned
 
-    else:
-        # ── Second+ offense: PERMANENT BAN ──
+    elif kick_count == 5:
+        # Case B: KICK (On the 6th attempt, after 5 warnings)
         try:
             await bot.ban_chat_member(chat_id, user_id)
-            # Do NOT unban — this is permanent
+            # Immediately unban so they CAN rejoin
+            await bot.unban_chat_member(chat_id, user_id, only_if_banned=True)
+        except Exception as e:
+            logger.error(f"Failed to kick {user_id} from {chat_id}: {e}")
+            return False
+
+        await increment_kick_count(user_id)
+
+        try:
+            kick_msg = await bot.send_message(
+                chat_id,
+                f"⚠️ <b>{display_name}</b> has been kicked from the channel.\n"
+                f"──────────────────────────\n"
+                f"📋 <b>Reason:</b> Exceeded 5 warnings without main group verification.\n"
+                f"ℹ️ Join our main group first to gain access here.\n\n"
+                f"<i>Another 3 warnings will result in a permanent ban.</i>",
+                parse_mode="HTML"
+            )
+            kick_timer = int(await get_setting('kick_delete_timer', '300'))
+            if kick_timer > 0:
+                async def _delete_msg(msg=kick_msg, delay=kick_timer):
+                    await asyncio.sleep(delay)
+                    try:
+                        await msg.delete()
+                    except Exception:
+                        pass
+                asyncio.create_task(_delete_msg())
+        except Exception as e:
+            logger.error(f"Failed to send kick notification for {user_id}: {e}")
+
+        if LOG_CHANNEL:
+            try:
+                log_text = (
+                    f"🚪 <b>GATEKEEPER EVICTION (Kick)</b>\n"
+                    f"──────────────────────────\n"
+                    f"👤 <b>User:</b> {display_name} (<code>{user_id}</code>)\n"
+                    f"📋 <b>Action:</b> Kicked from Social Chat (5 warnings exceeded)\n"
+                    f"ℹ️ <b>Reason:</b> Not a verified member of the main group."
+                )
+                await bot.send_message(
+                    chat_id=LOG_CHANNEL,
+                    text=log_text,
+                    parse_mode="HTML"
+                )
+            except Exception as log_err:
+                logger.warning(f"Failed to send gatekeeper log: {log_err}")
+
+        logger.info(f"ENFORCEMENT: Kicked {display_name} ({user_id})")
+        return True  # Kicked
+
+    elif kick_count >= 6 and kick_count <= 8:
+        # Case C: Warning before Ban (another 3 warnings: warnings 1/3, 2/3, 3/3 after kick)
+        post_warn_num = kick_count - 5
+        await increment_kick_count(user_id)
+
+        try:
+            warn_msg = await bot.send_message(
+                chat_id,
+                f"⚠️ <b>{display_name}</b> has received a warning (Warning <b>{post_warn_num}/3</b> after kick).\n"
+                f"──────────────────────────\n"
+                f"📋 <b>Reason:</b> Re-entering without main group verification.\n"
+                f"ℹ️ Please join our main group first to gain access here.\n\n"
+                f"<i>You will be permanently banned on the 4th attempt.</i>",
+                parse_mode="HTML"
+            )
+            warn_timer = int(await get_setting('ban_delete_timer', '600'))
+            if warn_timer > 0:
+                async def _delete_msg(msg=warn_msg, delay=warn_timer):
+                    await asyncio.sleep(delay)
+                    try:
+                        await msg.delete()
+                    except Exception:
+                        pass
+                asyncio.create_task(_delete_msg())
+        except Exception as e:
+            logger.error(f"Failed to send post-kick warning notification for {user_id}: {e}")
+
+        if LOG_CHANNEL:
+            try:
+                log_text = (
+                    f"🚪 <b>GATEKEEPER WARNING (Post-Kick)</b>\n"
+                    f"──────────────────────────\n"
+                    f"👤 <b>User:</b> {display_name} (<code>{user_id}</code>)\n"
+                    f"📋 <b>Action:</b> Warned (Post-Kick Warning {post_warn_num}/3)\n"
+                    f"ℹ️ <b>Reason:</b> Not a verified member of the main group."
+                )
+                await bot.send_message(
+                    chat_id=LOG_CHANNEL,
+                    text=log_text,
+                    parse_mode="HTML"
+                )
+            except Exception as log_err:
+                logger.warning(f"Failed to send gatekeeper log: {log_err}")
+
+        logger.info(f"ENFORCEMENT: Warned {display_name} ({user_id}) (Post-Kick Warning {post_warn_num}/3)")
+        return False  # Not kicked/banned
+
+    else:
+        # Case D: Permanent BAN (On the 4th attempt after kick)
+        try:
+            await bot.ban_chat_member(chat_id, user_id)
         except Exception as e:
             logger.error(f"Failed to ban {user_id} from {chat_id}: {e}")
             return False
@@ -94,29 +186,26 @@ async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = Non
         await increment_kick_count(user_id)
 
         try:
-            ban_tpl = await get_setting(
-                'msg_ban_notification',
-                '🚫 <b>{display_name}</b> has been permanently banned.\n──────────────────────────\n📋 <b>Reason:</b> Repeated entry without main group verification.\n❌ <i>This decision is final.</i>'
-            )
             ban_msg = await bot.send_message(
                 chat_id,
-                ban_tpl.format(display_name=display_name),
+                f"🚫 <b>{display_name}</b> has been permanently banned.\n"
+                f"──────────────────────────\n"
+                f"📋 <b>Reason:</b> Repeated entry without main group verification.\n"
+                f"❌ <i>This decision is final.</i>",
                 parse_mode="HTML"
             )
-            # Auto-delete the notification if timer is enabled (> 0)
             ban_timer = int(await get_setting('ban_delete_timer', '600'))
             if ban_timer > 0:
-                async def _delete_ban_msg(msg=ban_msg, delay=ban_timer):
+                async def _delete_msg(msg=ban_msg, delay=ban_timer):
                     await asyncio.sleep(delay)
                     try:
                         await msg.delete()
                     except Exception:
                         pass
-                asyncio.create_task(_delete_ban_msg())
+                asyncio.create_task(_delete_msg())
         except Exception as e:
             logger.error(f"Failed to send ban notification for {user_id}: {e}")
 
-        # Send Log Channel update
         if LOG_CHANNEL:
             try:
                 log_text = (
@@ -124,7 +213,7 @@ async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = Non
                     f"──────────────────────────\n"
                     f"👤 <b>User:</b> {display_name} (<code>{user_id}</code>)\n"
                     f"📋 <b>Action:</b> Permanently Banned from Social Chat\n"
-                    f"ℹ️ <b>Reason:</b> Repeated entry attempt (Offense #{kick_count + 1}) without main group verification."
+                    f"ℹ️ <b>Reason:</b> Exceeded post-kick warnings (Attempt #{kick_count + 1}) without main group verification."
                 )
                 await bot.send_message(
                     chat_id=LOG_CHANNEL,
@@ -134,7 +223,7 @@ async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = Non
             except Exception as log_err:
                 logger.warning(f"Failed to send gatekeeper ban log: {log_err}")
 
-        logger.info(f"ENFORCEMENT: Banned {display_name} ({user_id}) from social chat (offense #{kick_count + 1})")
+        logger.info(f"ENFORCEMENT: Banned {display_name} ({user_id}) from social chat (attempt #{kick_count + 1})")
         return True
 
 
