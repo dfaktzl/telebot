@@ -11,6 +11,15 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 
+async def delete_message_after_delay(bot: Bot, chat_id: int, message_id: int, delay: int):
+    """Safely delete a message after a specified delay (in seconds)."""
+    await asyncio.sleep(delay)
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception as e:
+        logger.warning(f"Failed to auto-delete message {message_id} in chat {chat_id}: {e}")
+
+
 async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = None, **kwargs):
     """Core enforcement logic: check if user belongs to main group.
     If not, give 5 warnings before a kick, and then another 3 warnings before a permanent ban.
@@ -44,13 +53,7 @@ async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = Non
             # Auto-delete warning notification
             warn_timer = int(await get_setting('kick_delete_timer', '300'))
             if warn_timer > 0:
-                async def _delete_msg(msg=warn_msg, delay=warn_timer):
-                    await asyncio.sleep(delay)
-                    try:
-                        await msg.delete()
-                    except Exception:
-                        pass
-                asyncio.create_task(_delete_msg())
+                asyncio.create_task(delete_message_after_delay(bot, chat_id, warn_msg.message_id, warn_timer))
         except Exception as e:
             logger.error(f"Failed to send join warning notification for {user_id}: {e}")
 
@@ -98,13 +101,7 @@ async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = Non
             )
             kick_timer = int(await get_setting('kick_delete_timer', '300'))
             if kick_timer > 0:
-                async def _delete_msg(msg=kick_msg, delay=kick_timer):
-                    await asyncio.sleep(delay)
-                    try:
-                        await msg.delete()
-                    except Exception:
-                        pass
-                asyncio.create_task(_delete_msg())
+                asyncio.create_task(delete_message_after_delay(bot, chat_id, kick_msg.message_id, kick_timer))
         except Exception as e:
             logger.error(f"Failed to send kick notification for {user_id}: {e}")
 
@@ -145,13 +142,7 @@ async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = Non
             )
             warn_timer = int(await get_setting('ban_delete_timer', '600'))
             if warn_timer > 0:
-                async def _delete_msg(msg=warn_msg, delay=warn_timer):
-                    await asyncio.sleep(delay)
-                    try:
-                        await msg.delete()
-                    except Exception:
-                        pass
-                asyncio.create_task(_delete_msg())
+                asyncio.create_task(delete_message_after_delay(bot, chat_id, warn_msg.message_id, warn_timer))
         except Exception as e:
             logger.error(f"Failed to send post-kick warning notification for {user_id}: {e}")
 
@@ -196,13 +187,7 @@ async def enforce_user(bot: Bot, user_id: int, chat_id: int, username: str = Non
             )
             ban_timer = int(await get_setting('ban_delete_timer', '600'))
             if ban_timer > 0:
-                async def _delete_msg(msg=ban_msg, delay=ban_timer):
-                    await asyncio.sleep(delay)
-                    try:
-                        await msg.delete()
-                    except Exception:
-                        pass
-                asyncio.create_task(_delete_msg())
+                asyncio.create_task(delete_message_after_delay(bot, chat_id, ban_msg.message_id, ban_timer))
         except Exception as e:
             logger.error(f"Failed to send ban notification for {user_id}: {e}")
 
@@ -268,9 +253,7 @@ async def on_social_chat_join(message: types.Message):
                  f"👤 <b>Profile Details:</b>\n"
                  f"├─ 🏷️ <b>Username:</b> {u_username}\n"
                  f"└─ 🆔 <b>User ID:</b> <code>{u_id}</code>\n\n"
-                 f"✨ <i>Enjoy your stay, read the pinned rules, and conduct yourself respectfully!</i>\n"
-                 f"──────────────────────────\n"
-                 f"⏳ <i>This welcome message self-destructs in {timer} seconds.</i>"
+                 f"✨ <i>Enjoy your stay, read the pinned rules, and conduct yourself respectfully!</i>"
             )
             
             try:
@@ -282,13 +265,7 @@ async def on_social_chat_join(message: types.Message):
                 
                 # Auto-delete in background if timer is enabled (> 0)
                 if timer > 0:
-                    async def _delete_later(msg=sent, delay=timer):
-                        await asyncio.sleep(delay)
-                        try:
-                            await msg.delete()
-                        except Exception:
-                            pass
-                    asyncio.create_task(_delete_later())
+                    asyncio.create_task(delete_message_after_delay(message.bot, message.chat.id, sent.message_id, timer))
             except Exception as e:
                 logger.error(f"Failed to send welcome message: {e}")
 
